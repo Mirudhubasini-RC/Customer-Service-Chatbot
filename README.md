@@ -71,30 +71,5 @@ The AI-driven Customer Support Chatbot enhances retail by using NLP and ML to ad
        npm start
 
 
-**7. Pushing and Merging the Code:**
-   - After completing the frontend and backend work, changes were committed and pushed to the respective branches:
-
-     git add .
-     git commit -m "Completed frontend and backend development"
-     git push origin frontend
-     git push origin backend
-     ```
-   - Merged the branches into the main branch:
-
-     git checkout main
-     git merge frontend
-     git merge backend
-
-   - Resolved any merge conflicts, if necessary, and pushed the final merged code:
-
-     git push origin main
-
-
-**8. Final Steps:**
-   - Verified that both frontend and backend work seamlessly together, including the integration with the MySQL database.
-   - Cleaned up unnecessary branches:
-
-     git branch -d frontend
-     git branch -d backend
 
 
