@@ -1,0 +1,122 @@
+.chat-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 90vh; /* Full viewport height */
+    background-image: url('../assets/background.jpg'); /* Path to your background image */
+    background-size: cover; /* Cover the entire area */
+    background-position: center; /* Center the background image */
+    background-repeat: no-repeat; /* Prevent repeating the image */
+  }
+  
+  /* User message - right-aligned, white text */
+  .message.user {
+    text-align: right; /* Align the text to the right */
+    background-color: rgb(103, 8, 235); /* Give the user message a purple background */
+    color: white !important;
+    padding: 10px;
+    border-radius: 10px;
+    max-width: 60%; /* Limit the width so the message doesn't stretch across the entire screen */
+    margin-left: auto; /* Align the entire message box to the right */
+    margin-bottom: 10px;
+    word-wrap: break-word; /* Ensure long words wrap to the next line */
+    word-break: break-word; /* Break long words if necessary */
+  }
+  
+  /* Bot message - left-aligned, light grey background */
+  .message.bot {
+    text-align: left; /* Align the text to the left */
+    background-color: lightgray; /* Bot's message background color */
+    color: black; /* Bot's text color */
+    padding: 10px;
+    border-radius: 10px;
+    max-width: 60%; /* Limit the width */
+    margin-right: auto; /* Align the entire message box to the left */
+    margin-bottom: 10px;
+    word-wrap: break-word; /* Ensure long words wrap to the next line */
+    word-break: break-word; /* Break long words if necessary */
+  }
+  
+  /* Chat history and messages container */
+  .chat-history {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+  }
+  
+  
+  /* Base styles for the chat window */
+  .chat-window {
+    display: flex;
+    flex-direction: column;
+    height: 75vh; /* Adjusted to better fit the viewport */
+    max-width: 900px; /* Ensure it takes full width */
+    width: 100%; /* Ensure it takes full width */
+    margin: auto;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Chat history and messages */
+  .chat-history {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+  }
+  
+  .message {
+    margin-bottom: 10px;
+  }
+  
+  .message.user {
+    text-align: right;
+    color: black;
+  }
+  
+  .message.bot {
+    text-align: left;
+    color: black;
+  }
+  
+  /* Chat input */
+  .chat-input {
+    display: flex;
+    border-top: 1px solid #ddd;
+    padding: 10px; /* Adjust padding to ensure visibility */
+  }
+  
+  /* Input field styling */
+  .chat-input input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    margin: 0 5px;
+    font-size: 16px;
+  }
+  
+  /* Send button styling */
+  .chat-input button {
+    background-color: #f5f4f6; /* Light background */
+    border: none;
+    border-radius: 50%; /* Circular button */
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-image: url('../assets/arrow.png'); 
+    background-size: 40px 40px; /* Adjust size of the icon */
+    background-position: center; /* Center the image */
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .chat-input button:hover {
+    background-color: rgb(149, 38, 163); /* Purple color on hover */
+  }
+  
+  
+  

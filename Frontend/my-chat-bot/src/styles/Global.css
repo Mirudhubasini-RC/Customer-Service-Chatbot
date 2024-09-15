@@ -1,0 +1,98 @@
+/* Global settings for both desktop and mobile */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: Arial, sans-serif;
+  }
+  
+  /* Top segment common styling */
+  .top-segment {
+    display: flex;
+    font-size: medium;
+    align-items: center;
+    background-color: white;
+    padding: 15px 30px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid #ddd;
+  }
+  
+  .logo {
+    width: 120px;
+  }
+  
+  /* Navigation links common styling */
+  nav ul {
+    list-style: none;
+    display: flex;
+    gap: 20px;
+  }
+  
+  nav ul li {
+    display: inline-block;
+  }
+  
+  nav ul li a {
+    text-decoration: none;
+    color: black;
+    font-size: 16px;
+  }
+  
+  /* Contact Us button common styling */
+  .contact-us-button {
+    padding: 10px 20px;
+    background-color: transparent;
+    border: 2px solid black;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  
+  .contact-us-button:hover {
+    background-color: black;
+    color: white;
+  }
+  
+  /* Search and hamburger icons common styling (default hidden) */
+  .mobile-icons {
+    display: none;
+  }
+  
+  /* Mobile view specific styles */
+  @media (max-width: 768px) {
+    .top-segment {
+      padding: 10px 20px;
+    }
+  
+    .logo {
+      width: 100px; /* Reduce logo size for mobile */
+    }
+  
+    /* Hide the navigation and button in mobile view */
+    nav, .contact-us-button {
+      display: none;
+    }
+  
+    /* Show the mobile icons */
+    .mobile-icons {
+      display: flex;
+      align-items: center;
+      gap: 15px; /* Space between the icons */
+    }
+  
+    /* Styling for icons in mobile */
+    .mobile-icons i {
+      font-size: 24px; /* Icon size */
+      cursor: pointer;
+    }
+  }
+  
+  /* Desktop view specific styles */
+  @media (min-width: 769px) {
+    .mobile-icons {
+      display: none; /* Hide mobile icons in desktop */
+    }
+  }
+  

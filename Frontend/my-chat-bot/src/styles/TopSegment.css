@@ -1,0 +1,86 @@
+/* Top segment styles */
+.top-segment {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: white;
+    padding: 15px 30px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid #ddd;
+    height: 90px; /* Adjust the height value as needed */
+  }
+  
+  .logo {
+    display: flex;
+    align-items: center;
+  }
+  
+  .logo img {
+    max-height: 100px; /* Adjust as needed */
+    width: auto; /* Maintain aspect ratio */
+  }
+  
+  /* Show navigation links, logo, and contact button by default */
+  .nav-links {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .nav-links a {
+    text-decoration: none;
+    color: black;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 5px 10px;
+  }
+  
+  .nav-links a:hover {
+    color: darkviolet;
+  }
+  
+  .contact-us-btn {
+    border: 2px solid black;
+    background: none;
+    color: black;
+    padding: 10px 20px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .contact-us-btn:hover {
+    background-color: #6801e0;
+  }
+  
+  /* Hide icons by default */
+  .icons {
+    display: none;
+  }
+  
+  /* Mobile styles */
+  @media (max-width: 768px) {
+    .nav-links {
+        display: none; /* Hide navigation links on mobile */
+    }
+  
+    .icons {
+        display: flex; /* Show icons for search and menu on mobile */
+        gap: 10px;
+        
+    }
+  
+    .menu-btn {
+        font-size: 28px;
+    }
+  
+    .icons img {
+      width: 24px;  /* Set the width to your desired size */
+      height: 24px; /* Set the height to match */
+      object-fit: contain; /* Ensure the image fits within the set size */
+    }
+    
+    .contact-us-btn {
+        display: none; /* Hide the contact button on mobile */
+    }
+  }
+  
