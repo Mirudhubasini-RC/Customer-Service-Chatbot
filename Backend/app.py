@@ -110,7 +110,7 @@ def query():
         return jsonify({'error': 'Invalid input'}), 400
 
     # Check if the query is a common greeting
-    greetings = ['hi', 'hello', 'hey', 'greetings', 'what\'s up']
+    greetings = ['hi', 'hello', 'hey']
     if any(greeting in query_text.lower() for greeting in greetings):
         return jsonify({'answer': 'How can I help you today?'}), 200
 
