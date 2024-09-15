@@ -7,15 +7,20 @@ import requests
 from dotenv import load_dotenv
 
 
-# Load environment variables
-load_dotenv()
 
-api_key = os.getenv('HUGGINGFACE_API_KEY')
+
+
+api_key = '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'
 API_URL = 'https://api-inference.huggingface.co/models/EleutherAI/gpt-neox-20b'
 HEADERS = {
     'Authorization': f'Bearer {api_key}',
     'Content-Type': 'application/json',
 }
+
+if api_key:
+    print("API key is set.")
+else:
+    print("API key is not set.")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -89,47 +94,57 @@ def get_queries():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/query', methods=['POST'])
-def handle_query():
-    data = request.get_json()
-    query = data.get('query')
+import re
 
-    if not query or not isinstance(query, str):
+@app.route('/query', methods=['POST', 'OPTIONS'])
+def query():
+    if request.method == 'OPTIONS':
+        # Handle the preflight OPTIONS request for CORS
+        return jsonify({'status': 'CORS Preflight OK'}), 200
+
+    # Handle POST request
+    data = request.get_json()
+    query_text = data.get('query')
+
+    if not query_text or not isinstance(query_text, str):
         return jsonify({'error': 'Invalid input'}), 400
 
-    try:
+    # Check if the query is a common greeting
+    greetings = ['hi', 'hello', 'hey', 'greetings', 'what\'s up']
+    if any(greeting in query_text.lower() for greeting in greetings):
+        return jsonify({'answer': 'How can I help you today?'}), 200
 
-        # Send the query to the LLM
-        response = requests.post(API_URL, headers=HEADERS, json={'inputs': query})
+    try:
+        # Process the query normally if it is not a greeting
+        response = requests.post(API_URL, headers=HEADERS, json={'inputs': query_text})
         response.raise_for_status()
         api_response = response.json()
-        
+
+        # Validate response format
         if isinstance(api_response, list) and 'generated_text' in api_response[0]:
             answer = api_response[0]['generated_text']
 
-
-            # Check if the query matches predefined patterns for direct SQL queries
-            sql_query = get_predefined_query(query)
+            # Example for additional logic if needed
+            sql_query = get_predefined_query(query_text)
             if sql_query:
                 data_from_db = execute_sql_query(sql_query)
                 answer += f" Here is the data from the database: {data_from_db}"
-            
+
             # Insert the query into the database
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO customer_queries (query_text, response) VALUES (%s, %s)", (query, answer))
+            cursor.execute("INSERT INTO customer_queries (query_text, response) VALUES (%s, %s)", (query_text, answer))
             conn.commit()
             cursor.close()
             conn.close()
-            
-
-            # Here you might want to add logic to query your database based on the LLM response
 
             return jsonify({'answer': answer})
         else:
             return jsonify({'answer': 'Unexpected response format from the API'})
     except requests.exceptions.RequestException as e:
         return jsonify({'error': str(e)}), 500
+
+
 
 @app.route('/')
 def home():
