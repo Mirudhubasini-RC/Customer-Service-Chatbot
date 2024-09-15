@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import '/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/styles/ChatWindow.css'
 import { sendQuery } from '/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/components/apiService.js'
+
 const ChatWindow = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
