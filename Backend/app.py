@@ -2,12 +2,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import mysql.connector
 import os
+import re
 
 import requests
 from dotenv import load_dotenv
-
-
-
 
 
 api_key = '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'
@@ -17,19 +15,12 @@ HEADERS = {
     'Content-Type': 'application/json',
 }
 
-if api_key:
-    print("API key is set.")
-else:
-    print("API key is not set.")
-
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 
 # Database connection configuration
-
-# Database connection
 db_config = {
     'user': 'root',
     'password': '',
@@ -45,10 +36,11 @@ def get_predefined_query(query):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT sql_query FROM query_patterns WHERE %s LIKE pattern", (query,))
+        cursor.execute("SELECT query_text FROM customer_queries WHERE %s LIKE pattern", (query,))
         result = cursor.fetchone()
         cursor.close()
         conn.close()
+
         return result['sql_query'] if result else None
     except Exception as e:
         print(f"Error fetching predefined query: {e}")
@@ -81,17 +73,19 @@ def get_sales_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/queries', methods=['GET'])
+@app.route('/products', methods=['GET'])
 def get_queries():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM customer_queries")
+        cursor.execute("SELECT * FROM products")
         queries = cursor.fetchall()
+        print(f"Fetched queries: {queries}")  # Debug print
         cursor.close()
         conn.close()
         return jsonify(queries)
     except Exception as e:
+        print(f"Error fetching queries: {e}")  # Debug print
         return jsonify({'error': str(e)}), 500
 
 import re
@@ -109,9 +103,9 @@ def query():
     if not query_text or not isinstance(query_text, str):
         return jsonify({'error': 'Invalid input'}), 400
 
-    # Check if the query is a common greeting
-    greetings = ['hi', 'hello', 'hey']
-    if any(greeting in query_text.lower() for greeting in greetings):
+    greetings_pattern = r'\b(hi|hello|hey)\b'
+    # Check if the query_text contains any of the greetings
+    if re.search(greetings_pattern, query_text.lower()):
         return jsonify({'answer': 'How can I help you today?'}), 200
 
     try:
@@ -123,13 +117,6 @@ def query():
         # Validate response format
         if isinstance(api_response, list) and 'generated_text' in api_response[0]:
             answer = api_response[0]['generated_text']
-
-            # Example for additional logic if needed
-            sql_query = get_predefined_query(query_text)
-            if sql_query:
-                data_from_db = execute_sql_query(sql_query)
-                answer += f" Here is the data from the database: {data_from_db}"
-
             # Insert the query into the database
             conn = get_db_connection()
             cursor = conn.cursor()
