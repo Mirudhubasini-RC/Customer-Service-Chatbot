@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import '/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/styles/TopSegment.css'; // Import the corresponding CSS file
-import search from '/Users/mirudhubasinirc/Documents/Customer-Support-Chatbot-for-Retail-Analytics/Customer-Support-Chatbot-for-Retail-Analystics/my-chatbot-app/src/assets/search.svg';
-import logo from '/Users/mirudhubasinirc/Documents/Customer-Support-Chatbot-for-Retail-Analytics/Customer-Support-Chatbot-for-Retail-Analystics/my-chatbot-app/src/assets/c5i.png';
-import ham from '/Users/mirudhubasinirc/Documents/Customer-Support-Chatbot-for-Retail-Analytics/Customer-Support-Chatbot-for-Retail-Analystics/my-chatbot-app/src/assets/hammenu.webp';
+import search from '/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/assests/search.svg';
+import logo from '/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/assests/c5i.png';
+import ham from '/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/assests/hammenu.webp';
 
 
 const TopSegment = () => {

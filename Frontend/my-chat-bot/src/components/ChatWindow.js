@@ -52,7 +52,6 @@ const ChatWindow = () => {
             onKeyPress={handleKeyPress}
           />
           <button onClick={handleSend} disabled={loading}>
-            Send
           </button>
         </div>
       </div>

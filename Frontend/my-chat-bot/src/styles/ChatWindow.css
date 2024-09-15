@@ -3,7 +3,7 @@
     justify-content: center;
     align-items: center;
     height: 90vh; /* Full viewport height */
-    background-image: url('../assets/background.jpg'); /* Path to your background image */
+    background-image: url('/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/assests/background.jpg'); /* Path to your background image */
     background-size: cover; /* Cover the entire area */
     background-position: center; /* Center the background image */
     background-repeat: no-repeat; /* Prevent repeating the image */
@@ -107,7 +107,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background-image: url('../assets/arrow.png'); 
+    background-image: url('/Users/mirudhubasinirc/Documents/Customer-Service-ChatBot/Customer-Service-Chatbot/Frontend/my-chat-bot/src/assests/arrow.png'); 
     background-size: 40px 40px; /* Adjust size of the icon */
     background-position: center; /* Center the image */
     cursor: pointer;
