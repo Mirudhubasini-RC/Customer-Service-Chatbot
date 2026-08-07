@@ -1,75 +1,69 @@
-# Customer-Service-Chatbot
-The AI-driven Customer Support Chatbot enhances retail by using NLP and ML to address queries, recommend products, and provide real-time support. It collects interaction data to deliver insights on customer preferences and trends, aiding retailers in making informed decisions and improving customer experience.
+# RetailAsk — Customer Service Chatbot
 
+AI customer support chatbot for retail: React frontend + Flask backend + MySQL + Hugging Face (NL→SQL).
 
----
+## Deploy on Render (recommended)
 
-### Project Workflow: Initial Setup, Development, and Merge
+You need **3 things**:
 
-**1. Cloning the Repository:**
-   - The project repository was cloned from GitHub to the local machine using the command:
+1. **Backend** — Render Web Service (Flask)
+2. **Frontend** — Render Static Site (React)
+3. **MySQL** — external (Render has no MySQL; use [Aiven](https://aiven.io) free MySQL)
 
-     git clone https://github.com/Mirudhubasini-RC/Customer-Service-Chatbot
+### Option A — Blueprint
 
+1. Push this repo to GitHub.
+2. In Render: **New → Blueprint** → select the repo.
+3. Fill in the prompted env vars.
+4. After backend is live, set frontend `REACT_APP_API_URL` to `https://<your-backend>.onrender.com` and redeploy frontend.
+5. Set backend `FRONTEND_URL` to `https://<your-frontend>.onrender.com`.
 
-**2. Node.js and npm Setup:**
-   - Installed Node.js and npm packages by navigating to the project folder and running:
-  
-     npm install
+### Option B — Manual services
 
-   - This installed all the necessary dependencies listed in the `package.json` file for frontend development.
+#### Backend Web Service
 
-**3. Frontend Development:**
-   - Created a separate Git branch for frontend development using:
+- **Root Directory:** `Backend`
+- **Build Command:** `pip install -r ../requirements.txt`
+- **Start Command:** `gunicorn app:app --bind 0.0.0.0:$PORT`
 
-     git checkout -b frontend
+| Key | Example |
+|-----|---------|
+| `HUGGINGFACE_API_KEY` | your HF token |
+| `HF_MODEL` | `Qwen/Qwen2.5-Coder-7B-Instruct:cheapest` |
+| `DB_HOST` | Aiven host |
+| `DB_PORT` | Aiven port |
+| `DB_USER` | `avnadmin` |
+| `DB_PASSWORD` | Aiven password |
+| `DB_NAME` | `defaultdb` |
+| `DB_SSL` | `required` |
+| `FRONTEND_URL` | frontend Render URL |
 
-   - Built the frontend using React as a Progressive Web App (PWA). To enable PWA functionality, the service worker was modified from `unregister` to `register` in `src/serviceWorker.js`:
+#### Frontend Static Site
 
-     serviceWorker.register();
+- **Root Directory:** `Frontend/my-chat-bot`
+- **Build Command:** `npm install && npm run build`
+- **Publish Directory:** `build`
+- Env: `REACT_APP_API_URL` = backend Render URL
 
+### MySQL setup
 
-**4. Backend Setup:**
-   - In the `Backend` folder, created the `app.py` file for the Flask backend server.
-   - Set up a Python virtual environment by running:
+Import `Backend/seed.sql` into Aiven `defaultdb`, then set the DB env vars above.
 
-     python3 -m venv venv
+## Local development
 
-   - Activated the virtual environment:
+```bash
+# Backend
+cd Backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r ../requirements.txt
+cp .env.example .env   # fill in values
+python app.py
 
-     source venv/bin/activate
+# Frontend (new terminal)
+cd Frontend/my-chat-bot
+npm install
+npm start
+```
 
-   - Installed the required backend dependencies:
-
-     pip install Flask Flask-CORS mysql-connector-python requests
-
-   - Built the Flask server to handle API requests and database queries.
-
-**5. Database Setup (MySQL on Mac):**
-   - Installed MySQL on Mac using Homebrew:
-
-     brew install mysql
-
-   - Started the MySQL server:
-
-     brew services start mysql
-
-   - Logged in to the MySQL client:
-
-     mysql -u root
-
-   - Created the necessary database and tables for the project:
-     
-**6. Running the Server and Frontend:**
-   - Both the Flask server and the React frontend were run:
-     - To run the Flask server:
-
-       python app.py
-
-     - To run the React frontend:
-
-       npm start
-
-
-
-
+Frontend defaults to `http://localhost:8000` when `REACT_APP_API_URL` is unset.

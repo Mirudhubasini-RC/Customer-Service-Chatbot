@@ -21,3 +21,12 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Cursor / agent (never commit)
+.cursor/
+.cursorignore
+.cursorrules
+AGENTS.md
+*.canvas.tsx
+*.canvas.ts
+agent-transcripts/

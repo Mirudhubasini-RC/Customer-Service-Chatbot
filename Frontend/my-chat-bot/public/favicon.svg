@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="RetailAsk">
+  <defs>
+    <linearGradient id="favGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#4C1D95"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#favGrad)"/>
+  <path
+    d="M28 100 V26 H62 C80 26 92 38 92 54 C92 66 85 75 73 78 L98 100 H76 L58 80 H48 V100 H28 Z M48 64 H61 C68 64 74 59 74 53 C74 47 68 42 61 42 H48 V64 Z"
+    fill="#FFFFFF"
+  />
+  <circle cx="94" cy="94" r="17" fill="none" stroke="#FFFFFF" stroke-width="9"/>
+  <line x1="106" y1="106" x2="118" y2="118" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/>
+</svg>

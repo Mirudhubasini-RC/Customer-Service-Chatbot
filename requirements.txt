@@ -1,4 +1,6 @@
 flask
-flask_cors
+flask-cors
 requests
-mysql.connector
+mysql-connector-python
+python-dotenv
+gunicorn
