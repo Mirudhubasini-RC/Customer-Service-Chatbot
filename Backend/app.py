@@ -35,11 +35,13 @@ MODEL = os.getenv('HF_MODEL', 'Qwen/Qwen2.5-Coder-7B-Instruct:cheapest')
 
 app = Flask(__name__)
 
-frontend_origin = os.getenv('FRONTEND_URL', '*')
+frontend_origin = os.getenv('FRONTEND_URL', '*').strip() or '*'
+# Browsers reject Access-Control-Allow-Origin: * when credentials are enabled.
+cors_credentials = frontend_origin != '*'
 CORS(
     app,
     resources={r"/*": {"origins": frontend_origin}},
-    supports_credentials=True,
+    supports_credentials=cors_credentials,
 )
 
 db_config = {
