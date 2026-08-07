@@ -43,11 +43,22 @@ const ProductsIcon = () => (
   </svg>
 );
 
+const DEFAULT_PRACTICE_QUESTIONS = [
+  'What were our total sales this month?',
+  'Which products are selling the most?',
+  'Can you recommend products for a first-time buyer?',
+  'What is the average order value?',
+  'Summarize recent customer support queries.',
+  'Which product has the highest price?',
+];
+
 const ChatWindow = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [practiceQuestions, setPracticeQuestions] = useState([]);
+  const [practiceQuestions, setPracticeQuestions] = useState(
+    DEFAULT_PRACTICE_QUESTIONS,
+  );
   const [pipeline, setPipeline] = useState([]);
   const [pipelineMeta, setPipelineMeta] = useState({
     model: '',
@@ -57,17 +68,15 @@ const ChatWindow = () => {
   const historyRef = useRef(null);
 
   useEffect(() => {
+    // Optional refresh from API; keep local defaults so cold starts don't blank the UI
     fetchPracticeQuestions()
-      .then(setPracticeQuestions)
+      .then((questions) => {
+        if (Array.isArray(questions) && questions.length > 0) {
+          setPracticeQuestions(questions);
+        }
+      })
       .catch(() => {
-        setPracticeQuestions([
-          'What were our total sales this month?',
-          'Which products are selling the most?',
-          'Can you recommend products for a first-time buyer?',
-          'What is the average order value?',
-          'Summarize recent customer support queries.',
-          'Which product has the highest price?',
-        ]);
+        setPracticeQuestions(DEFAULT_PRACTICE_QUESTIONS);
       });
   }, []);
 
