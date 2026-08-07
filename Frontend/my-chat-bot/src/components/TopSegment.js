@@ -8,7 +8,7 @@ const TopSegment = () => {
       <a className="logo" href="#home" aria-label="RetailAsk home">
         <img src={logo} alt="RetailAsk" />
       </a>
-      <p className="top-tagline">Ask your retail data anything</p>
+      <p className="top-tagline">Ask RetailAsk AI anything</p>
     </header>
   );
 };

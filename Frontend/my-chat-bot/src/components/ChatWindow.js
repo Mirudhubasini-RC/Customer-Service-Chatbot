@@ -285,9 +285,9 @@ const ChatWindow = () => {
                 className="icon-button"
                 onClick={() => handleIconClick('sales')}
                 disabled={loading}
-                title="Sales data"
+                title="Sales table"
                 type="button"
-                aria-label="Show sales data"
+                aria-label="Sales table"
               >
                 <SalesIcon />
               </button>
@@ -295,9 +295,9 @@ const ChatWindow = () => {
                 className="icon-button"
                 onClick={() => handleIconClick('product')}
                 disabled={loading}
-                title="Products"
+                title="Product table"
                 type="button"
-                aria-label="Show products"
+                aria-label="Product table"
               >
                 <ProductsIcon />
               </button>
