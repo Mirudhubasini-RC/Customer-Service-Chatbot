@@ -10,6 +10,8 @@ from decimal import Decimal
 from datetime import date, datetime
 from dotenv import load_dotenv
 
+from schema_rag import get_schema_rag
+
 load_dotenv(override=True)
 
 LOG_DIR = os.path.join(os.path.dirname(__file__), 'logs')
@@ -61,34 +63,8 @@ if os.getenv('DB_SSL', '').lower() in ('1', 'true', 'required', 'yes'):
     if ssl_ca:
         db_config['ssl_ca'] = ssl_ca
 
-SCHEMA_PROMPT = f"""
-MySQL database: {os.getenv('DB_NAME', 'salesdb')}
-
-Tables:
-1) products(
-     product_id INT PRIMARY KEY,
-     product_name VARCHAR(100),
-     price DECIMAL(10,2)
-   )
-2) sales(
-     sale_id INT PRIMARY KEY,
-     product_id INT,  -- joins to products.product_id
-     sale_date DATE,
-     quantity INT,
-     total_price DECIMAL(10,2)
-   )
-3) customer_queries(
-     query_id INT PRIMARY KEY,
-     query_text TEXT,
-     response TEXT,
-     query_date TIMESTAMP
-   )
-
-Notes:
-- There is NO stock/inventory column. If asked about stock, say that stock data is unavailable.
-- Prefer JOINs between sales and products when product names are needed.
-- Use MySQL syntax only.
-""".strip()
+# Schema for NL→SQL is retrieved via Schema RAG (see schema_rag.py + schema_kb/).
+# Do not paste the full database schema into every prompt.
 
 CHAT_SYSTEM_PROMPT = (
     'You are a friendly retail customer support assistant for RetailAsk. '
@@ -226,20 +202,38 @@ def execute_sql_query(sql_query):
 
 
 def generate_sql(query_text):
+    """
+    NL→SQL with Schema RAG:
+      question → schema_rag.retrieve → schema context → Qwen → SQL
+
+    Returns (sql_or_none, schema_rag_meta_dict).
+    """
     model = os.getenv('HF_MODEL', MODEL)
     logger.info('SQL generation start | model=%s | question=%s', model, query_text)
+
+    schema_rag = get_schema_rag()
+    retrieval = schema_rag.retrieve(query_text)
+    schema_context = retrieval['schema_context']
+    schema_meta = {
+        'retrieved_tables': retrieval['retrieved_tables'],
+        'expanded_tables': retrieval['expanded_tables'],
+        'scores': retrieval['scores'],
+        'schema_context': schema_context,
+    }
+
     messages = [
         {
             'role': 'system',
             'content': (
-                'You convert retail questions into a single MySQL SELECT query. '
+                'You convert retail analytics questions into a single MySQL SELECT query. '
+                'Use ONLY the retrieved schema context provided by Schema RAG. '
                 'Return ONLY SQL. No markdown, no explanation. '
-                'If the question cannot be answered from the schema, return exactly: UNSUPPORTED'
+                'If the question cannot be answered from the retrieved schema, return exactly: UNSUPPORTED'
             ),
         },
         {
             'role': 'user',
-            'content': f'{SCHEMA_PROMPT}\n\nQuestion: {query_text}\nSQL:',
+            'content': f'{schema_context}\n\nQuestion: {query_text}\nSQL:',
         },
     ]
     raw = call_llm(messages, max_tokens=180, temperature=0.1)
@@ -247,15 +241,15 @@ def generate_sql(query_text):
 
     if 'UNSUPPORTED' in raw.upper() and 'SELECT' not in raw.upper():
         logger.info('SQL generation result | unsupported for question=%s', query_text)
-        return None
+        return None, schema_meta
 
     sql = extract_sql(raw)
     if not is_safe_select(sql):
         logger.warning('SQL rejected as unsafe | extracted=%s', sql)
-        return None
+        return None, schema_meta
 
     logger.info('SQL generated | %s', sql)
-    return sql
+    return sql, schema_meta
 
 
 def explain_rows(query_text, sql, rows):
@@ -308,7 +302,13 @@ def answer_query(query_text):
         return result
 
     if looks_like_data_question(query_text):
-        sql = generate_sql(query_text)
+        sql, schema_meta = generate_sql(query_text)
+        schema_tables = schema_meta.get('expanded_tables') or schema_meta.get('retrieved_tables') or []
+        schema_scores = schema_meta.get('scores') or {}
+        schema_detail = (
+            f"tables={', '.join(schema_tables)}; "
+            f"scores={json.dumps(schema_scores)}"
+        )
         if sql:
             rows = execute_sql_query(sql)
             logger.info('SQL executed | row_count=%s | preview=%s', len(rows), json.dumps(rows[:5], default=str))
@@ -316,13 +316,19 @@ def answer_query(query_text):
                 {'id': 1, 'title': 'User question', 'status': 'done', 'detail': query_text},
                 {
                     'id': 2,
+                    'title': 'Schema RAG',
+                    'status': 'done',
+                    'detail': schema_detail,
+                },
+                {
+                    'id': 3,
                     'title': 'AI → SQL',
                     'status': 'done',
                     'detail': sql,
                     'model': model,
                 },
                 {
-                    'id': 3,
+                    'id': 4,
                     'title': 'Run SQL on MySQL',
                     'status': 'done',
                     'detail': f'{len(rows)} row(s) returned',
@@ -332,11 +338,16 @@ def answer_query(query_text):
                 answer = 'I ran that against the database, but no matching rows were found.'
                 logger.info('Final response | %s', answer)
                 return with_pipeline(
-                    {'answer': answer, 'sql': sql, 'rows': []},
+                    {
+                        'answer': answer,
+                        'sql': sql,
+                        'rows': [],
+                        'schema_rag': schema_meta,
+                    },
                     base_steps
                     + [
                         {
-                            'id': 4,
+                            'id': 5,
                             'title': 'AI answer',
                             'status': 'done',
                             'detail': answer,
@@ -354,11 +365,16 @@ def answer_query(query_text):
                 )
             logger.info('Final response | sql=%s | answer=%s', sql, explanation)
             return with_pipeline(
-                {'answer': explanation, 'sql': sql, 'rows': rows[:50]},
+                {
+                    'answer': explanation,
+                    'sql': sql,
+                    'rows': rows[:50],
+                    'schema_rag': schema_meta,
+                },
                 base_steps
                 + [
                     {
-                        'id': 4,
+                        'id': 5,
                         'title': 'AI answer from results',
                         'status': 'done',
                         'detail': explanation,
@@ -374,18 +390,24 @@ def answer_query(query_text):
             )
             logger.info('Final response | %s', answer)
             return with_pipeline(
-                {'answer': answer, 'sql': None, 'rows': []},
+                {'answer': answer, 'sql': None, 'rows': [], 'schema_rag': schema_meta},
                 [
                     {'id': 1, 'title': 'User question', 'status': 'done', 'detail': query_text},
                     {
                         'id': 2,
+                        'title': 'Schema RAG',
+                        'status': 'done',
+                        'detail': schema_detail,
+                    },
+                    {
+                        'id': 3,
                         'title': 'AI → SQL',
                         'status': 'skipped',
                         'detail': 'Schema has no stock/inventory fields',
                         'model': model,
                     },
                     {
-                        'id': 3,
+                        'id': 4,
                         'title': 'AI answer',
                         'status': 'done',
                         'detail': answer,

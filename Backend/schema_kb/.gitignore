@@ -1,0 +1,2 @@
+# Cached local embedding matrix for Schema RAG (regenerated on demand)
+schema_embeddings.npz

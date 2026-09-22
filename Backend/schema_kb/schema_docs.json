@@ -1,0 +1,268 @@
+{
+  "database": "salesdb",
+  "notes": [
+    "There is NO stock/inventory column. If asked about stock, answer that stock data is unavailable.",
+    "Use MySQL syntax only.",
+    "Prefer JOINs when product names, brand names, category names, or issue names are needed.",
+    "customer_queries stores RetailAsk owner chat history with the bot — not customer product feedback.",
+    "customer_feedback stores customer sentiment, issues, and returns about products.",
+    "Return information is on customer_feedback.is_return and customer_feedback.return_reason (no separate returns table)."
+  ],
+  "tables": [
+    {
+      "table_name": "products",
+      "purpose": "Product catalog for the retail store. Each row is a sellable item with price and links to brand and category.",
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying a product."
+        },
+        {
+          "name": "product_name",
+          "type": "VARCHAR(100)",
+          "meaning": "Human-readable product name (e.g. Laptop, Mouse)."
+        },
+        {
+          "name": "price",
+          "type": "DECIMAL(10,2)",
+          "meaning": "Unit list price of the product."
+        },
+        {
+          "name": "brand_id",
+          "type": "INT NULL",
+          "meaning": "Foreign key to brands.brand_id — which brand owns this product."
+        },
+        {
+          "name": "category_id",
+          "type": "INT NULL",
+          "meaning": "Foreign key to categories.category_id — product category."
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "brand_id",
+          "references_table": "brands",
+          "references_column": "brand_id"
+        },
+        {
+          "column": "category_id",
+          "references_table": "categories",
+          "references_column": "category_id"
+        }
+      ],
+      "example_questions": [
+        "Which products are priced above $200?",
+        "List all products with their brand and category.",
+        "What is the price of the Laptop?"
+      ]
+    },
+    {
+      "table_name": "sales",
+      "purpose": "Sales / transaction line items. Each row records quantity and revenue for one product on a sale date. Use for revenue totals, top-selling products, and sales trends.",
+      "columns": [
+        {
+          "name": "sale_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying a sale row."
+        },
+        {
+          "name": "product_id",
+          "type": "INT NULL",
+          "meaning": "Foreign key to products.product_id — which product was sold."
+        },
+        {
+          "name": "sale_date",
+          "type": "DATE",
+          "meaning": "Date the sale occurred."
+        },
+        {
+          "name": "quantity",
+          "type": "INT",
+          "meaning": "Number of units sold in this sale."
+        },
+        {
+          "name": "total_price",
+          "type": "DECIMAL(10,2)",
+          "meaning": "Total revenue for this sale line (quantity × price)."
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "product_id",
+          "references_table": "products",
+          "references_column": "product_id"
+        }
+      ],
+      "example_questions": [
+        "Which products have the highest sales?",
+        "What were total sales this month?",
+        "What is the average order value?",
+        "Which brand generates the most sales revenue?",
+        "Which category has the most sales?"
+      ]
+    },
+    {
+      "table_name": "brands",
+      "purpose": "Brand lookup table. Use when questions ask about brands, brand performance, or brand-level sales.",
+      "columns": [
+        {
+          "name": "brand_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying a brand."
+        },
+        {
+          "name": "brand_name",
+          "type": "VARCHAR(100)",
+          "meaning": "Brand display name (e.g. TechNova, SoundMax)."
+        }
+      ],
+      "foreign_keys": [],
+      "example_questions": [
+        "Which brands generate the most sales?",
+        "List all brands in the catalog.",
+        "How many products does each brand have?"
+      ]
+    },
+    {
+      "table_name": "categories",
+      "purpose": "Product category lookup table. Use for category revenue, category rankings, and grouping products by category.",
+      "columns": [
+        {
+          "name": "category_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying a category."
+        },
+        {
+          "name": "category_name",
+          "type": "VARCHAR(100)",
+          "meaning": "Category display name (e.g. Computers, Audio, Furniture)."
+        }
+      ],
+      "foreign_keys": [],
+      "example_questions": [
+        "Which category has the most sales?",
+        "Which category has the highest revenue?",
+        "How many products are in each category?"
+      ]
+    },
+    {
+      "table_name": "issues",
+      "purpose": "Issue type lookup for customer feedback (quality problems, delivery, compatibility, etc.). Join from customer_feedback when analyzing issue types.",
+      "columns": [
+        {
+          "name": "issue_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying an issue type."
+        },
+        {
+          "name": "issue_name",
+          "type": "VARCHAR(100)",
+          "meaning": "Issue label such as Defective product, Battery life, Durability."
+        }
+      ],
+      "foreign_keys": [],
+      "example_questions": [
+        "Which products have quality issues?",
+        "What are the most common issue types?",
+        "Which issue is linked to the most returns?"
+      ]
+    },
+    {
+      "table_name": "customer_feedback",
+      "purpose": "Customer product feedback for retail-owner analytics. Includes sentiment (positive/negative/neutral), optional issue link, and return flags. NOT the same as customer_queries chat history.",
+      "columns": [
+        {
+          "name": "feedback_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying a feedback row."
+        },
+        {
+          "name": "product_id",
+          "type": "INT",
+          "meaning": "Foreign key to products.product_id — product the feedback is about."
+        },
+        {
+          "name": "issue_id",
+          "type": "INT NULL",
+          "meaning": "Optional foreign key to issues.issue_id — classified issue type."
+        },
+        {
+          "name": "feedback_text",
+          "type": "TEXT",
+          "meaning": "Free-text customer feedback comment."
+        },
+        {
+          "name": "sentiment",
+          "type": "ENUM('positive','negative','neutral')",
+          "meaning": "Sentiment label for the feedback."
+        },
+        {
+          "name": "is_return",
+          "type": "TINYINT(1)",
+          "meaning": "Boolean flag: 1 if this feedback is associated with a return, else 0."
+        },
+        {
+          "name": "return_reason",
+          "type": "VARCHAR(255) NULL",
+          "meaning": "Optional reason when is_return is true."
+        },
+        {
+          "name": "feedback_date",
+          "type": "TIMESTAMP",
+          "meaning": "When the feedback was recorded."
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "product_id",
+          "references_table": "products",
+          "references_column": "product_id"
+        },
+        {
+          "column": "issue_id",
+          "references_table": "issues",
+          "references_column": "issue_id"
+        }
+      ],
+      "example_questions": [
+        "Which products have negative feedback and returns?",
+        "Which products have quality issues?",
+        "Show products with many returns.",
+        "What is the sentiment breakdown by product?"
+      ]
+    },
+    {
+      "table_name": "customer_queries",
+      "purpose": "RetailAsk owner chat history: natural-language questions asked to the bot and the bot responses. Use only for summarizing past owner queries — not for product feedback, sentiment, or returns.",
+      "columns": [
+        {
+          "name": "query_id",
+          "type": "INT",
+          "meaning": "Primary key uniquely identifying a chat log row."
+        },
+        {
+          "name": "query_text",
+          "type": "TEXT",
+          "meaning": "Owner question typed into RetailAsk."
+        },
+        {
+          "name": "response",
+          "type": "TEXT NULL",
+          "meaning": "Bot answer that was returned."
+        },
+        {
+          "name": "query_date",
+          "type": "TIMESTAMP",
+          "meaning": "When the chat exchange was saved."
+        }
+      ],
+      "foreign_keys": [],
+      "example_questions": [
+        "Summarize recent owner questions to the bot.",
+        "What have users been asking RetailAsk lately?",
+        "Show recent customer_queries chat history."
+      ]
+    }
+  ]
+}
