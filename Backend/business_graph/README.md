@@ -1,90 +1,151 @@
 # RetailAsk Business Graph (Step 3B)
 
-This package is the **Business Graph layer** only: representation, construction from MySQL, and traversal helpers.
+This package is the **Business Graph layer**: representation, MySQL→graph sync, and traversal.
 
-It is **not** Schema RAG (DB schema retrieval for SQL).  
-It is **not** question → graph retrieval → Qwen answering (future step).  
-It is **not** multi-agent orchestration.
+- **Persistent store:** Neo4j (`Neo4jGraphStore`)
+- **Fallback / unit tests:** in-memory (`InMemoryGraphStore`)
+- **Not** Schema RAG, agents, or question→graph→Qwen answering
 
-## Why RetailAsk needs a business graph
+## Why Neo4j
 
-Retail owners ask relationship questions that SQL alone answers awkwardly:
+RetailAsk’s business graph is relationship-shaped (brand → product → sales/feedback → issues). Neo4j gives:
 
-- Which products under a brand have negative feedback and returns?
-- What issues sit on high-selling products?
-- How do sales and feedback connect for one SKU?
+- Persistent, inspectable graph storage (Browser / Cypher)
+- Idempotent `MERGE` sync from MySQL
+- A production-ready backend for future Graph RAG retrieval
 
-A **business graph** makes Brand / Product / Category / Sale / Feedback / Issue links first-class, while MySQL remains the system of record.
+The `GraphStore` interface keeps builder/service independent of Neo4j so tests can stay in-memory.
 
-## Entities (nodes)
-
-| Node | MySQL source | Key properties |
-|------|----------------|----------------|
-| Brand | `brands` | `brand_id`, `brand_name` |
-| Category | `categories` | `category_id`, `category_name` |
-| Product | `products` | `product_id`, `product_name`, `price`, `brand_id`, `category_id` |
-| Sale | `sales` | `sale_id`, `product_id`, `sale_date`, `quantity`, `total_price` |
-| CustomerFeedback | `customer_feedback` | `feedback_id`, `product_id`, `issue_id`, `feedback_text`, `sentiment`, `is_return`, `return_reason`, `feedback_date` |
-| Issue | `issues` | `issue_id`, `issue_name` |
-
-Node ids are `Label:mysql_id` (e.g. `Product:6`) so every node traces back to MySQL.
-
-## Relationships (edges)
-
-Only FK-backed edges are created:
+## Architecture
 
 ```
-Brand ──HAS_PRODUCT──> Product <──HAS_PRODUCT── Category
-                         │
-                         ├── HAS_SALE ──> Sale
-                         │
-                         └── HAS_FEEDBACK ──> CustomerFeedback
-                                                   │
-                                                   └── ABOUT_ISSUE ──> Issue
+MySQL (system of record)
+   ↓
+BusinessGraphBuilder
+   ↓
+Neo4jGraphStore  ──implements──> GraphStore
+   ↓
+BusinessGraphService (traversals)
+   ↓
+(future) Graph RAG retrieval
 ```
 
-| Edge | Backed by |
-|------|-----------|
-| Brand → Product (`HAS_PRODUCT`) | `products.brand_id` |
-| Category → Product (`HAS_PRODUCT`) | `products.category_id` |
-| Product → Sale (`HAS_SALE`) | `sales.product_id` |
-| Product → CustomerFeedback (`HAS_FEEDBACK`) | `customer_feedback.product_id` |
-| CustomerFeedback → Issue (`ABOUT_ISSUE`) | `customer_feedback.issue_id` (skipped when NULL) |
+In-memory path (tests / offline):
 
-No free-text inferred links. `customer_queries` is **not** in this graph.
+```
+seed_fixture / MySQL rows → BusinessGraphBuilder → InMemoryGraphStore → BusinessGraphService
+```
 
-## How the graph is built
+## Entities & relationships
 
-1. `BusinessGraphBuilder.build_from_mysql(...)` reads the six tables, **or**
-2. `build_from_records(...)` accepts dict rows (tests / offline demo via `seed_fixture.py`).
-3. Nodes are upserted, then relationships are created only when FK values exist.
-4. Build logs node counts, relationship counts, and type breakdowns.
+```
+(:Brand)-[:HAS_PRODUCT]->(:Product)<-[:HAS_PRODUCT]-(:Category)
+                              |
+                              ├──[:HAS_SALE]->(:Sale)
+                              |
+                              └──[:HAS_FEEDBACK]->(:CustomerFeedback)
+                                                       |
+                                                       └──[:ABOUT_ISSUE]->(:Issue)
+```
 
-## Graph storage abstraction
+Only FK-backed edges are created (`products.brand_id`, `products.category_id`, `sales.product_id`, `customer_feedback.product_id`, `customer_feedback.issue_id`).
 
-**Decision:** `InMemoryGraphStore` (pure Python) behind `GraphStore` ABC.
+Node identity: MySQL PK property + `key` (`Product:6`). Uniqueness constraints are created on connect.
 
-**Why not Neo4j in Step 3B:**
-- Project has no Neo4j dependency or deploy config today.
-- Seeded graph is small; an in-memory store is enough for construction + inspection.
-- Take-home demos should run without a graph database server.
+## Neo4j setup
 
-**How to swap later:** implement `GraphStore` with Neo4j (or another backend). Keep using `BusinessGraphBuilder` + `BusinessGraphService` without rewriting callers.
+1. Install Neo4j Desktop or run Docker:
 
-## Traversal helpers
+```bash
+docker run -d --name retailask-neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/your_neo4j_password \
+  neo4j:5
+```
 
-- `get_product(product_id)`
-- `get_product_sales(product_id)`
-- `get_product_feedback(product_id)`
-- `get_product_issues(product_id)`
-- `get_products_by_brand(brand_id)`
-- `get_products_by_category(category_id)`
+2. Copy env vars into `Backend/.env` (see `.env.example`):
 
-## Demo / tests
+| Variable | Example |
+|----------|---------|
+| `NEO4J_URI` | `bolt://localhost:7687` |
+| `NEO4J_USERNAME` | `neo4j` |
+| `NEO4J_PASSWORD` | *(your password)* |
+| `NEO4J_DATABASE` | `neo4j` |
+
+3. Install dependency: `pip install neo4j` (included in `requirements.txt`).
+
+## Build / sync the graph
 
 ```bash
 cd Backend
 source venv/bin/activate
+pip install -r ../requirements.txt
+
+# Sync into Neo4j (MySQL if configured, else seed_fixture)
+python demo_business_graph.py --neo4j
+
+# Force seed_fixture → Neo4j (no MySQL)
+python demo_business_graph.py --neo4j --seed-only
+
+# Offline in-memory demo (no Neo4j)
 python demo_business_graph.py --seed-only
+```
+
+Builder uses `clear()` then `MERGE` upserts so identity is stable; running sync twice does not duplicate nodes/relationships.
+
+## Demo Cypher (also printed by `--neo4j`)
+
+```cypher
+MATCH (p:Product {product_id: 3})
+OPTIONAL MATCH (b:Brand)-[:HAS_PRODUCT]->(p)
+OPTIONAL MATCH (c:Category)-[:HAS_PRODUCT]->(p)
+OPTIONAL MATCH (p)-[:HAS_FEEDBACK]->(f:CustomerFeedback)
+OPTIONAL MATCH (f)-[:ABOUT_ISSUE]->(i:Issue)
+RETURN p.product_name, b.brand_name, c.category_name,
+       f.sentiment, f.is_return, i.issue_name
+```
+
+## Tests
+
+```bash
+# Unit tests (InMemoryGraphStore — no Neo4j required)
 python -m unittest tests.test_business_graph -v
+
+# Integration tests (requires live Neo4j + env vars; skips if unavailable)
+python -m unittest tests.test_business_graph_neo4j -v
+```
+
+Expected seed counts: **82 nodes**, **97 relationships**.
+
+## Graph Retrieval (Step 3C)
+
+**Graph Retrieval** turns a retail-owner question into a structured retrieval intent, runs Cypher against Neo4j Aura, and returns a normalized graph context (`nodes`, `relationships`, `facts`).
+
+It is **not** Schema RAG (schema-for-SQL).  
+Step 3D adds Qwen answer generation on top of this context (see below).
+
+```
+Question → intent parser → Cypher (Neo4j Aura) → graph context
+```
+
+```bash
+cd Backend
+source venv/bin/activate
+python demo_graph_retrieval.py
+python -m unittest tests.test_graph_retrieval -v
+```
+
+## Graph RAG (Step 3D)
+
+Connects Step 3C retrieval to **Qwen2.5-Coder** (`business_graph/graph_answer.py`).
+
+```
+Question → GraphRetriever → Neo4j context → Qwen → grounded answer
+```
+
+Independent of the main `/query` SQL pipeline. No agents yet.
+
+```bash
+python demo_graph_rag.py
+python -m unittest tests.test_graph_rag tests.test_graph_retrieval -v
 ```

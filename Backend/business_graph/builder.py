@@ -68,8 +68,10 @@ class BusinessGraphBuilder:
         products: list[dict[str, Any]],
         sales: list[dict[str, Any]],
         customer_feedback: list[dict[str, Any]],
+        clear_existing: bool = True,
     ) -> BuildStats:
-        self.store.clear()
+        if clear_existing:
+            self.store.clear()
 
         for brand in brands:
             brand_id = int(brand['brand_id'])

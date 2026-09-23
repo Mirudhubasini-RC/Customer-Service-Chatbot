@@ -29,6 +29,25 @@ def node_key(label: NodeLabel | str, record_id: int) -> str:
     return f'{label_value}:{int(record_id)}'
 
 
+# MySQL primary-key property used for Neo4j uniqueness / MERGE
+ID_PROPERTY: dict[NodeLabel, str] = {
+    NodeLabel.BRAND: 'brand_id',
+    NodeLabel.PRODUCT: 'product_id',
+    NodeLabel.CATEGORY: 'category_id',
+    NodeLabel.SALE: 'sale_id',
+    NodeLabel.CUSTOMER_FEEDBACK: 'feedback_id',
+    NodeLabel.ISSUE: 'issue_id',
+}
+
+
+def parse_node_key(key: str) -> tuple[NodeLabel, int]:
+    """Parse `Product:6` → (NodeLabel.PRODUCT, 6)."""
+    if ':' not in key:
+        raise ValueError(f'Invalid node key: {key!r}')
+    label_str, id_str = key.split(':', 1)
+    return NodeLabel(label_str), int(id_str)
+
+
 @dataclass
 class GraphNode:
     key: str

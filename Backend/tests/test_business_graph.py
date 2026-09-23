@@ -100,6 +100,13 @@ class BusinessGraphTests(unittest.TestCase):
         self.assertIn('Issue: Durability', report)
         self.assertIn('Return: yes', report)
 
+    def test_idempotent_rebuild_in_memory(self):
+        builder = BusinessGraphBuilder()
+        first = builder.build_from_records(**seed_records())
+        second = builder.build_from_records(**seed_records(), clear_existing=False)
+        self.assertEqual(first.node_count, second.node_count)
+        self.assertEqual(first.relationship_count, second.relationship_count)
+
 
 if __name__ == '__main__':
     unittest.main()

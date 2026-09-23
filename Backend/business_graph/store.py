@@ -1,15 +1,11 @@
 """
 Graph storage abstraction for RetailAsk Business Graph.
 
-Decision (Step 3B):
-  Use an in-memory GraphStore implementation (pure Python).
+Primary persistent store: Neo4jGraphStore (see neo4j_store.py)
+Lightweight fallback / unit tests: InMemoryGraphStore (this file)
 
-Why not Neo4j yet:
-  - The project has no Neo4j dependency, config, or deploy story today.
-  - Seeded retail graph is small (~tens of nodes/edges).
-  - Take-home needs a working, inspectable graph without running a graph DB.
-  - This interface keeps Neo4j (or another backend) swappable later without
-    rewriting builder/service/callers.
+Both implement GraphStore so BusinessGraphBuilder / BusinessGraphService
+stay storage-agnostic.
 """
 
 from __future__ import annotations
@@ -22,7 +18,7 @@ from .models import GraphNode, GraphRelationship, NodeLabel, RelType, node_key
 
 
 class GraphStore(ABC):
-    """Storage-agnostic graph API (in-memory today, Neo4j-ready later)."""
+    """Storage-agnostic graph API (Neo4j in production, in-memory for tests)."""
 
     @abstractmethod
     def clear(self) -> None:
@@ -65,6 +61,7 @@ class InMemoryGraphStore(GraphStore):
     """
     Simple directed multigraph stored in process memory.
 
+    Kept for unit tests and offline demos when Neo4j is unavailable.
     Nodes keyed by `Label:mysql_id`. Relationships stored as adjacency lists.
     """
 
@@ -175,7 +172,6 @@ class InMemoryGraphStore(GraphStore):
             'storage': 'InMemoryGraphStore',
         }
 
-    # Convenience used by builder/tests
     def make_key(self, label: NodeLabel, record_id: int) -> str:
         return node_key(label, record_id)
 
