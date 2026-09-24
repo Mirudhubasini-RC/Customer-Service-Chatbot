@@ -29,11 +29,25 @@ logging.basicConfig(
 logger = logging.getLogger('retail-agent')
 
 api_key = os.getenv('HUGGINGFACE_API_KEY')
+# LLM provider: huggingface (default) | groq (free tier) | ollama (free local)
+LLM_PROVIDER = (os.getenv('LLM_PROVIDER') or 'huggingface').strip().lower()
 API_URL = os.getenv(
     'HF_API_URL',
     'https://router.huggingface.co/v1/chat/completions',
 )
 MODEL = os.getenv('HF_MODEL', 'Qwen/Qwen2.5-Coder-7B-Instruct:cheapest')
+
+GROQ_API_URL = os.getenv(
+    'GROQ_API_URL',
+    'https://api.groq.com/openai/v1/chat/completions',
+)
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'llama-3.1-8b-instant')
+
+OLLAMA_API_URL = os.getenv(
+    'OLLAMA_API_URL',
+    'http://127.0.0.1:11434/v1/chat/completions',
+)
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen2.5-coder:7b')
 
 app = Flask(__name__)
 
@@ -73,6 +87,29 @@ CHAT_SYSTEM_PROMPT = (
     'Do not invent exact database numbers.'
 )
 
+SQL_GENERATION_SYSTEM_PROMPT = (
+    'You convert retail analytics questions into a single MySQL SELECT query. '
+    'Use ONLY the retrieved schema context provided by Schema RAG, including its Notes / '
+    'business semantics. '
+    'Do NOT invent business thresholds that are not in the question or schema notes '
+    '(no absolute sales cutoffs like quantity > 100; no invented feedback-count cutoffs '
+    'like COUNT(feedback) > 5). '
+    'When the schema notes define relative measures (for example high sales via a dynamic '
+    'median of per-product SUM(quantity)), implement that definition in SQL. '
+    'When dynamic median is required, use MySQL 8-compatible window functions such as '
+    'ROW_NUMBER() and COUNT() OVER() rather than constructing LIMIT/OFFSET expressions '
+    'with subqueries. A valid pattern is: aggregate per-product totals in a CTE, rank with '
+    'ROW_NUMBER() OVER (ORDER BY total_quantity) and COUNT(*) OVER (), take AVG of the '
+    'middle row(s) via rn IN ((cnt + 1) / 2, (cnt + 2) / 2), then filter '
+    'total_quantity >= that median. Do not hardcode a numeric median. '
+    'Do not invent invalid MySQL syntax such as LIMIT <expression> with nested SELECT arithmetic. '
+    'Prefer the simplest valid MySQL that answers the question; use CTEs only when helpful. '
+    'Returns (is_return) are NOT the same as quality issues (issue_id / JOIN issues); '
+    'use is_return only when the question explicitly mentions returns. '
+    'Return ONLY SQL. No markdown, no explanation. '
+    'If the question cannot be answered from the retrieved schema, return exactly: UNSUPPORTED'
+)
+
 PRACTICE_QUESTIONS = [
     'What were our total sales this month?',
     'Which products are selling the most?',
@@ -98,26 +135,77 @@ def auth_headers():
     }
 
 
+def _llm_endpoint():
+    """
+    Resolve OpenAI-compatible chat-completions URL + model + optional API key.
+
+    Free options:
+      LLM_PROVIDER=groq   → free Groq cloud key (https://console.groq.com)
+      LLM_PROVIDER=ollama → free local Ollama (no key)
+    """
+    provider = (os.getenv('LLM_PROVIDER') or LLM_PROVIDER or 'huggingface').strip().lower()
+
+    if provider == 'groq':
+        key = os.getenv('GROQ_API_KEY') or ''
+        if not key:
+            raise RuntimeError(
+                'GROQ_API_KEY is not configured. Create a free key at '
+                'https://console.groq.com/keys and set GROQ_API_KEY in Backend/.env'
+            )
+        return {
+            'provider': 'groq',
+            'url': os.getenv('GROQ_API_URL', GROQ_API_URL),
+            'model': os.getenv('GROQ_MODEL', GROQ_MODEL),
+            'headers': {
+                'Authorization': f'Bearer {key}',
+                'Content-Type': 'application/json',
+            },
+        }
+
+    if provider == 'ollama':
+        return {
+            'provider': 'ollama',
+            'url': os.getenv('OLLAMA_API_URL', OLLAMA_API_URL),
+            'model': os.getenv('OLLAMA_MODEL', OLLAMA_MODEL),
+            'headers': {'Content-Type': 'application/json'},
+        }
+
+    # Default: Hugging Face Inference Router (often requires paid credits)
+    key = os.getenv('HUGGINGFACE_API_KEY') or api_key
+    if not key:
+        raise RuntimeError(
+            'HUGGINGFACE_API_KEY is not configured. For a free setup set '
+            'LLM_PROVIDER=groq with GROQ_API_KEY, or LLM_PROVIDER=ollama.'
+        )
+    return {
+        'provider': 'huggingface',
+        'url': os.getenv('HF_API_URL', API_URL),
+        'model': os.getenv('HF_MODEL', MODEL),
+        'headers': auth_headers(),
+    }
+
+
 def get_db_connection():
     return mysql.connector.connect(**db_config)
 
 
 def call_llm(messages, max_tokens=220, temperature=0.2):
-    key = os.getenv('HUGGINGFACE_API_KEY') or api_key
-    if not key:
-        raise RuntimeError('HUGGINGFACE_API_KEY is not configured')
-
-    model = os.getenv('HF_MODEL', MODEL)
+    endpoint = _llm_endpoint()
+    logger.info(
+        'LLM call | provider=%s | model=%s',
+        endpoint['provider'],
+        endpoint['model'],
+    )
     response = requests.post(
-        API_URL,
-        headers=auth_headers(),
+        endpoint['url'],
+        headers=endpoint['headers'],
         json={
-            'model': model,
+            'model': endpoint['model'],
             'messages': messages,
             'max_tokens': max_tokens,
             'temperature': temperature,
         },
-        timeout=90,
+        timeout=180,
     )
     response.raise_for_status()
     api_response = response.json()
@@ -160,14 +248,158 @@ def extract_sql(text):
     return candidate
 
 
+def _strip_leading_sql_noise(sql: str) -> str:
+    """Remove leading whitespace and SQL comments (-- and /* */) before validation."""
+    text = sql or ''
+    while True:
+        text = text.lstrip()
+        if text.startswith('/*'):
+            end = text.find('*/')
+            if end == -1:
+                return ''
+            text = text[end + 2 :]
+            continue
+        if text.startswith('--'):
+            nl = text.find('\n')
+            if nl == -1:
+                return ''
+            text = text[nl + 1 :]
+            continue
+        break
+    # Also strip remaining block/line comments inside for keyword scans later
+    text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.DOTALL)
+    text = re.sub(r'--.*?$', ' ', text, flags=re.MULTILINE)
+    return text.strip()
+
+
+def _skip_sql_string(text: str, pos: int) -> int:
+    """Advance past a quoted string starting at pos. Returns new index."""
+    n = len(text)
+    quote = text[pos]
+    pos += 1
+    while pos < n:
+        ch = text[pos]
+        if ch == '\\':
+            pos += 2
+            continue
+        if ch == quote:
+            # SQL doubled-quote escape: '' or ""
+            if pos + 1 < n and text[pos + 1] == quote:
+                pos += 2
+                continue
+            return pos + 1
+        pos += 1
+    return n
+
+
+def _skip_balanced_parens(text: str, pos: int) -> int:
+    """text[pos] must be '('. Returns index just after the matching ')'."""
+    n = len(text)
+    if pos >= n or text[pos] != '(':
+        return pos
+    depth = 1
+    pos += 1
+    while pos < n and depth:
+        ch = text[pos]
+        if ch in ("'", '"', '`'):
+            pos = _skip_sql_string(text, pos)
+            continue
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+        pos += 1
+    return pos
+
+
+def _with_outer_keyword(sql: str) -> str | None:
+    """
+    For a WITH query, return the outer statement keyword after CTE definitions
+    (select / insert / update / delete / ...). None if unparseable.
+    """
+    text = sql.strip()
+    low = text.lower()
+    if not low.startswith('with'):
+        return None
+
+    pos = 4
+    n = len(text)
+
+    while pos < n:
+        while pos < n and text[pos].isspace():
+            pos += 1
+        if pos >= n:
+            return None
+
+        # optional RECURSIVE (once at the start of the CTE list)
+        if low.startswith('recursive', pos):
+            pos += 9
+            while pos < n and text[pos].isspace():
+                pos += 1
+
+        # CTE name (allow backticks/quotes)
+        if pos < n and text[pos] in ('`', '"', "'"):
+            pos = _skip_sql_string(text, pos)
+        else:
+            while pos < n and (text[pos].isalnum() or text[pos] in '._$'):
+                pos += 1
+
+        while pos < n and text[pos].isspace():
+            pos += 1
+
+        # optional column list
+        if pos < n and text[pos] == '(':
+            pos = _skip_balanced_parens(text, pos)
+            while pos < n and text[pos].isspace():
+                pos += 1
+
+        if not low.startswith('as', pos):
+            return None
+        pos += 2
+        while pos < n and text[pos].isspace():
+            pos += 1
+        if pos >= n or text[pos] != '(':
+            return None
+        pos = _skip_balanced_parens(text, pos)
+        while pos < n and text[pos].isspace():
+            pos += 1
+
+        if pos < n and text[pos] == ',':
+            pos += 1
+            continue
+
+        rest = low[pos:].lstrip()
+        match = re.match(
+            r'(select|insert|update|delete|replace|drop|alter|truncate|create|grant|revoke|with|call|exec)\b',
+            rest,
+        )
+        return match.group(1) if match else None
+
+    return None
+
+
 def is_safe_select(sql):
+    """
+    Allow read-only SELECT queries, including read-only CTEs (WITH ... SELECT).
+    Reject write/destructive statements, including WITH ... INSERT/UPDATE/DELETE.
+    """
     if not sql:
         return False
 
-    normalized = re.sub(r'\s+', ' ', sql).strip()
+    cleaned = _strip_leading_sql_noise(sql)
+    if not cleaned:
+        return False
+
+    normalized = re.sub(r'\s+', ' ', cleaned).strip()
     lower = normalized.lower()
 
-    if not lower.startswith('select'):
+    if lower.startswith('select'):
+        outer = 'select'
+    elif lower.startswith('with'):
+        outer = _with_outer_keyword(cleaned)
+        if outer != 'select':
+            return False
+    else:
         return False
 
     banned = [
@@ -224,19 +456,15 @@ def generate_sql(query_text):
     messages = [
         {
             'role': 'system',
-            'content': (
-                'You convert retail analytics questions into a single MySQL SELECT query. '
-                'Use ONLY the retrieved schema context provided by Schema RAG. '
-                'Return ONLY SQL. No markdown, no explanation. '
-                'If the question cannot be answered from the retrieved schema, return exactly: UNSUPPORTED'
-            ),
+            'content': SQL_GENERATION_SYSTEM_PROMPT,
         },
         {
             'role': 'user',
             'content': f'{schema_context}\n\nQuestion: {query_text}\nSQL:',
         },
     ]
-    raw = call_llm(messages, max_tokens=180, temperature=0.1)
+    # Median / multi-join analytics questions need a bit more room than simple aggregates.
+    raw = call_llm(messages, max_tokens=320, temperature=0.1)
     logger.info('SQL model raw output | %s', raw)
 
     if 'UNSUPPORTED' in raw.upper() and 'SELECT' not in raw.upper():
@@ -491,11 +719,12 @@ def query():
         return jsonify(result)
     except requests.exceptions.HTTPError as e:
         detail = e.response.text if e.response is not None else str(e)
-        if e.response is not None and e.response.status_code in (401, 403):
+        if e.response is not None and e.response.status_code in (401, 402, 403, 503):
             detail = (
-                'Hugging Face rejected the API key. '
-                'Update HUGGINGFACE_API_KEY in Backend/.env with a valid token '
-                'that has Inference Providers access.'
+                'The LLM API rejected the request (auth/credits). '
+                'For a free setup: set LLM_PROVIDER=groq and GROQ_API_KEY '
+                '(https://console.groq.com/keys), or use LLM_PROVIDER=ollama locally. '
+                'Hugging Face Inference Router often requires paid credits.'
             )
         return jsonify({'error': detail}), 500
     except requests.exceptions.RequestException as e:
