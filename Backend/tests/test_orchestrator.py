@@ -118,6 +118,7 @@ class OrchestratorUnitTests(unittest.TestCase):
             return_value={'route': 'sql_and_graph', 'reason': 'both', 'question': q}
         )
         sql_result = _sql_ok(q)
+        sql_result['answer'] = ''  # combo path skips explain_rows NL
         graph_result = _graph_ok(q)
         sql_fn = MagicMock(return_value=sql_result)
         graph_fn = MagicMock(return_value=graph_result)
@@ -131,7 +132,7 @@ class OrchestratorUnitTests(unittest.TestCase):
             synthesize_fn=synth,
         )
 
-        sql_fn.assert_called_once_with(q)
+        sql_fn.assert_called_once_with(q, explain_rows=False)
         graph_fn.assert_called_once_with(q)
         self.assertEqual(synth.call_count, 1)
         args, kwargs = synth.call_args
@@ -146,6 +147,50 @@ class OrchestratorUnitTests(unittest.TestCase):
             'Combined: high sellers with negative feedback.',
         )
         self.assertTrue(result['success'])
+
+    def test_sql_route_keeps_explain_rows_default(self):
+        """SQL-only must not pass explain_rows=False (default explain stays on)."""
+        route_fn = MagicMock(
+            return_value={'route': 'sql', 'reason': 'revenue', 'question': 'q'}
+        )
+        sql_fn = MagicMock(return_value=_sql_ok('How much revenue did we make?'))
+
+        run_supervised_question(
+            'How much revenue did we make?',
+            route_fn=route_fn,
+            sql_agent_fn=sql_fn,
+            graph_agent_fn=MagicMock(),
+        )
+
+        sql_fn.assert_called_once_with('How much revenue did we make?')
+        _args, kwargs = sql_fn.call_args
+        self.assertNotIn('explain_rows', kwargs)
+
+    def test_sql_and_graph_synthesis_uses_raw_rows_not_explain(self):
+        """Synthesis prompt includes rows_preview even when SQL answer is empty."""
+        captured: dict[str, Any] = {}
+
+        def fake_llm(messages, max_tokens=320, temperature=0.2):
+            captured['messages'] = messages
+            return 'Synthesized from rows.'
+
+        sql_result = _sql_ok()
+        sql_result['answer'] = ''
+        sql_result['rows'] = [{'product_name': 'Mouse', 'total_quantity': 70}]
+        graph_result = _graph_ok()
+
+        answer = synthesize_sql_and_graph_answer(
+            'Which product has highest sale and more quality issues?',
+            sql_result,
+            graph_result,
+            llm_call=fake_llm,
+        )
+
+        self.assertEqual(answer, 'Synthesized from rows.')
+        user = captured['messages'][1]['content']
+        self.assertIn('Mouse', user)
+        self.assertIn('total_quantity', user)
+        self.assertIn('rows_preview', user)
 
     def test_synthesis_receives_both_results_via_llm_messages(self):
         """synthesize_sql_and_graph_answer packs both agents into the LLM prompt."""

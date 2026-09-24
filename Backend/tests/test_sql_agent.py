@@ -106,6 +106,45 @@ class SqlAgentUnitTests(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertIsNone(result['error'])
 
+    def test_explain_rows_used_by_default_for_sql_only(self):
+        sql = 'SELECT SUM(amount) AS revenue FROM sales'
+        rows = [{'revenue': 1000.0}]
+        explain = MagicMock(return_value='Total revenue is 1000.')
+
+        result = run_sql_agent(
+            'How much revenue did we make?',
+            generate_sql_fn=MagicMock(return_value=(sql, _schema_meta())),
+            is_safe_select_fn=lambda s: True,
+            execute_sql_fn=lambda s: rows,
+            explain_rows_fn=explain,
+        )
+
+        explain.assert_called_once_with(
+            'How much revenue did we make?', sql, rows
+        )
+        self.assertEqual(result['answer'], 'Total revenue is 1000.')
+        self.assertEqual(result['rows'], rows)
+
+    def test_skip_explain_rows_returns_raw_rows(self):
+        sql = 'SELECT product_name, total_quantity FROM product_sales'
+        rows = [{'product_name': 'Mouse', 'total_quantity': 70}]
+        explain = MagicMock(return_value='should not be used')
+
+        result = run_sql_agent(
+            'Which product has highest sale and more quality issues?',
+            generate_sql_fn=MagicMock(return_value=(sql, _schema_meta())),
+            is_safe_select_fn=lambda s: True,
+            execute_sql_fn=lambda s: rows,
+            explain_rows_fn=explain,
+            explain_rows=False,
+        )
+
+        explain.assert_not_called()
+        self.assertTrue(result['success'])
+        self.assertEqual(result['rows'], rows)
+        self.assertEqual(result['sql'], sql)
+        self.assertEqual(result['answer'], '')
+
     def test_empty_results_handled(self):
         generate = MagicMock(
             return_value=('SELECT * FROM sales WHERE 1=0', _schema_meta())

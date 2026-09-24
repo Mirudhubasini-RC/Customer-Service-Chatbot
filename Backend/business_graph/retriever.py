@@ -18,6 +18,7 @@ from .intent import (
     PRODUCT_CONTEXT,
     PRODUCT_FEEDBACK,
     PRODUCT_ISSUES,
+    QUALITY_ISSUE_NAMES,
     PRODUCT_SALES,
     PRODUCTS_HIGH_SALES_AND_QUALITY_ISSUES,
     PRODUCTS_NEGATIVE_FEEDBACK_RETURNS,
@@ -323,17 +324,24 @@ class GraphRetriever:
     # Cypher plans for relationship-oriented questions
     # ------------------------------------------------------------------
 
+    def _quality_issue_params(self, intent: RetrievalIntent) -> dict[str, Any]:
+        names = intent.filters.get('quality_issue_names') or list(QUALITY_ISSUE_NAMES)
+        return {'quality_issue_names': list(names)}
+
     def _retrieve_products_with_quality_issues(
         self, question: str, intent: RetrievalIntent
     ) -> dict[str, Any]:
+        params = self._quality_issue_params(intent)
         rows = self.store.run_cypher(
             """
             MATCH (p:Product)-[:HAS_FEEDBACK]->(f:CustomerFeedback)-[:ABOUT_ISSUE]->(i:Issue)
+            WHERE i.issue_name IN $quality_issue_names
             OPTIONAL MATCH (b:Brand)-[:HAS_PRODUCT]->(p)
             RETURN p, b, collect(DISTINCT i.issue_name) AS issue_names,
                    count(DISTINCT f) AS feedback_count
             ORDER BY feedback_count DESC, p.product_name
-            """
+            """,
+            params,
         )
         ctx = empty_context(question, intent)
         for row in rows:
@@ -373,8 +381,10 @@ class GraphRetriever:
         path_rows = self.store.run_cypher(
             """
             MATCH (p:Product)-[:HAS_FEEDBACK]->(f:CustomerFeedback)-[:ABOUT_ISSUE]->(i:Issue)
+            WHERE i.issue_name IN $quality_issue_names
             RETURN p, f, i
-            """
+            """,
+            params,
         )
         for row in path_rows:
             product = self._node_props(row.get('p'), 'Product')
@@ -532,27 +542,14 @@ class GraphRetriever:
     def _retrieve_products_high_sales_and_quality_issues(
         self, question: str, intent: RetrievalIntent
     ) -> dict[str, Any]:
-        sales_rows = self.store.run_cypher(
-            """
-            MATCH (p:Product)-[:HAS_SALE]->(s:Sale)
-            RETURN p.product_id AS product_id,
-                   sum(s.quantity) AS sales_units
-            """
-        )
-        ctx = empty_context(question, intent)
-        if not sales_rows:
-            return ctx
+        threshold = intent.filters.get('sales_threshold') or 'median_or_above'
+        use_highest = threshold == 'highest'
 
-        units = sorted(int(r['sales_units'] or 0) for r in sales_rows)
-        mid = len(units) // 2
-        if len(units) % 2 == 1:
-            median = float(units[mid])
-        else:
-            median = float(units[mid - 1] + units[mid]) / 2.0 if units else 0.0
-
+        quality_params = self._quality_issue_params(intent)
         agg_rows = self.store.run_cypher(
             """
             MATCH (p:Product)-[:HAS_FEEDBACK]->(:CustomerFeedback)-[:ABOUT_ISSUE]->(i:Issue)
+            WHERE i.issue_name IN $quality_issue_names
             WITH p, collect(DISTINCT i.issue_name) AS issue_names
             MATCH (p)-[:HAS_SALE]->(s:Sale)
             OPTIONAL MATCH (b:Brand)-[:HAS_PRODUCT]->(p)
@@ -561,20 +558,54 @@ class GraphRetriever:
                  sum(s.total_price) AS sales_revenue
             RETURN p, b, issue_names, sales_units, sales_revenue
             ORDER BY sales_units DESC
-            """
+            """,
+            quality_params,
         )
 
-        ctx['facts'].append(
-            {
-                'type': 'sales_threshold',
-                'rule': 'median_or_above',
-                'median_sales_units': median,
-            }
-        )
+        ctx = empty_context(question, intent)
+        if not agg_rows:
+            return ctx
+
+        median: float | None = None
+        if not use_highest:
+            sales_rows = self.store.run_cypher(
+                """
+                MATCH (p:Product)-[:HAS_SALE]->(s:Sale)
+                RETURN p.product_id AS product_id,
+                       sum(s.quantity) AS sales_units
+                """
+            )
+            if not sales_rows:
+                return ctx
+            units = sorted(int(r['sales_units'] or 0) for r in sales_rows)
+            mid = len(units) // 2
+            if len(units) % 2 == 1:
+                median = float(units[mid])
+            else:
+                median = float(units[mid - 1] + units[mid]) / 2.0 if units else 0.0
+            ctx['facts'].append(
+                {
+                    'type': 'sales_threshold',
+                    'rule': 'median_or_above',
+                    'median_sales_units': median,
+                }
+            )
+        else:
+            ctx['facts'].append(
+                {
+                    'type': 'sales_threshold',
+                    'rule': 'highest',
+                }
+            )
+
         selected_ids: set[int] = set()
         for row in agg_rows:
             sales_units = int(row.get('sales_units') or 0)
-            if sales_units < median:
+            if use_highest:
+                # agg_rows already ORDER BY sales_units DESC — keep only the first.
+                if selected_ids:
+                    break
+            elif median is not None and sales_units < median:
                 continue
             product = self._node_props(row.get('p'), 'Product')
             brand = self._node_props(row.get('b'), 'Brand')
@@ -601,6 +632,8 @@ class GraphRetriever:
                     ],
                 }
             )
+            if use_highest:
+                break
 
         if not selected_ids:
             return ctx
@@ -610,9 +643,13 @@ class GraphRetriever:
             MATCH (p:Product)-[:HAS_FEEDBACK]->(f:CustomerFeedback)-[:ABOUT_ISSUE]->(i:Issue)
             MATCH (p)-[:HAS_SALE]->(s:Sale)
             WHERE p.product_id IN $product_ids
+              AND i.issue_name IN $quality_issue_names
             RETURN p, f, i, s
             """,
-            {'product_ids': list(selected_ids)},
+            {
+                'product_ids': list(selected_ids),
+                **quality_params,
+            },
         )
         for row in detail_rows:
             product = self._node_props(row.get('p'), 'Product')

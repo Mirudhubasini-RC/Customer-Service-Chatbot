@@ -20,6 +20,8 @@ logger = logging.getLogger('retail-agent')
 DEFAULT_DOCS_PATH = Path(__file__).resolve().parent / 'schema_kb' / 'schema_docs.json'
 DEFAULT_CACHE_PATH = Path(__file__).resolve().parent / 'schema_kb' / 'schema_embeddings.npz'
 DEFAULT_MODEL = os.getenv('SCHEMA_EMBEDDING_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
+# Keep MiniLM off the GPU by default so Ollama/Qwen can use MPS/VRAM.
+DEFAULT_DEVICE = 'cpu'
 
 
 def _cosine_similarity(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
@@ -54,16 +56,15 @@ def _doc_to_embed_text(table: dict[str, Any]) -> str:
 
 
 def _format_table_for_llm(table: dict[str, Any]) -> str:
-    """Concise schema block for the SQL LLM."""
+    """Concise schema block for the SQL LLM (name/type + FKs; semantics live in Notes)."""
     lines = [
         f"Table: {table['table_name']}",
         f"Purpose: {table.get('purpose', '')}",
         'Columns:',
     ]
     for col in table.get('columns') or []:
-        lines.append(
-            f"  - {col['name']} {col.get('type', '')} — {col.get('meaning', '')}"
-        )
+        # Omit long column meanings — business rules are in Notes to avoid prompt bloat.
+        lines.append(f"  - {col['name']} {col.get('type', '')}".rstrip())
     fks = table.get('foreign_keys') or []
     if fks:
         lines.append('Foreign keys:')
@@ -75,6 +76,11 @@ def _format_table_for_llm(table: dict[str, Any]) -> str:
     return '\n'.join(lines)
 
 
+# Product dimension lookups — include only when Schema RAG retrieved them as seeds
+# (avoids brands/categories bloating sales+quality prompts via products.* FKs).
+_SEED_ONLY_LOOKUPS = frozenset({'brands', 'categories'})
+
+
 class SchemaRAG:
     """Semantic Schema RAG retriever over RetailAsk table documentation."""
 
@@ -84,10 +90,16 @@ class SchemaRAG:
         cache_path: str | Path | None = None,
         model_name: str | None = None,
         top_k: int | None = None,
+        device: str | None = None,
     ):
         self.docs_path = Path(docs_path or os.getenv('SCHEMA_DOCS_PATH', DEFAULT_DOCS_PATH))
         self.cache_path = Path(cache_path or os.getenv('SCHEMA_EMBED_CACHE', DEFAULT_CACHE_PATH))
         self.model_name = model_name or DEFAULT_MODEL
+        self.device = (
+            device
+            if device is not None
+            else (os.getenv('SCHEMA_EMBED_DEVICE') or DEFAULT_DEVICE)
+        ).strip() or DEFAULT_DEVICE
         self.top_k = int(top_k or os.getenv('SCHEMA_RAG_TOP_K', '3'))
 
         self._model = None
@@ -141,8 +153,12 @@ class SchemaRAG:
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
-            logger.info('Schema RAG loading embedding model | %s', self.model_name)
-            self._model = SentenceTransformer(self.model_name)
+            logger.info(
+                'Schema RAG loading embedding model | %s | device=%s',
+                self.model_name,
+                self.device,
+            )
+            self._model = SentenceTransformer(self.model_name, device=self.device)
         return self._model
 
     def _ensure_embeddings(self) -> None:
@@ -193,11 +209,17 @@ class SchemaRAG:
         2) For lookup seeds (brands/categories/issues): inbound FKs so fact tables
            are included (issues → customer_feedback; brands → products)
         3) Re-run outbound expansion once more for any newly added tables
+
+        brands/categories are added only if they were semantic seeds (not merely
+        because products references them).
         """
+        seed_set = set(seed_tables)
         expanded = list(seed_tables)
         seen = set(seed_tables)
 
         def add(name: str) -> None:
+            if name in _SEED_ONLY_LOOKUPS and name not in seed_set:
+                return
             if name not in seen:
                 seen.add(name)
                 expanded.append(name)

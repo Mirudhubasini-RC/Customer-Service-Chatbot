@@ -122,11 +122,16 @@ def synthesize_sql_and_graph_answer(
 
 def _safe_run_agent(
     label: str,
-    fn: Callable[[str], dict[str, Any]],
+    fn: Callable[..., dict[str, Any]],
     question: str,
+    **agent_kwargs: Any,
 ) -> dict[str, Any]:
     try:
-        result = fn(question)
+        try:
+            result = fn(question, **agent_kwargs) if agent_kwargs else fn(question)
+        except TypeError:
+            # Injected test doubles may only accept the question positional.
+            result = fn(question)
         if isinstance(result, dict):
             return result
         return {
@@ -262,7 +267,8 @@ def run_supervised_question(
         }
 
     # --- sql_and_graph ---
-    sql_result = _safe_run_agent('sql', sql_agent_fn, q)
+    # Skip SQL explain_rows LLM; synthesis uses raw rows (+ graph answer).
+    sql_result = _safe_run_agent('sql', sql_agent_fn, q, explain_rows=False)
     graph_result = _safe_run_agent('graph', graph_agent_fn, q)
     sql_ok = bool(sql_result.get('success'))
     graph_ok = bool(graph_result.get('success'))

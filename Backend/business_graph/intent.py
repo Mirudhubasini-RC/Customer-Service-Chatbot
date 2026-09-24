@@ -41,6 +41,16 @@ PRODUCTS_WITH_QUALITY_ISSUES = 'products_with_quality_issues'
 PRODUCTS_NEGATIVE_FEEDBACK_RETURNS = 'products_negative_feedback_returns'
 BRANDS_WITH_NEGATIVE_FEEDBACK = 'brands_with_negative_feedback'
 PRODUCTS_HIGH_SALES_AND_QUALITY_ISSUES = 'products_high_sales_and_quality_issues'
+
+# Quality-issue semantics: only product/quality defect types count.
+# Excluded (seed still has them): Late delivery, Wrong item received, Pricing concern.
+QUALITY_ISSUE_NAMES: tuple[str, ...] = (
+    'Defective product',
+    'Battery life',
+    'Durability',
+    'Compatibility',
+    'Packaging damage',
+)
 PRODUCT_CONTEXT = 'product_context'
 PRODUCT_FEEDBACK = 'product_feedback'
 PRODUCT_SALES = 'product_sales'
@@ -59,6 +69,12 @@ _NEGATIVE_RE = re.compile(r'\b(negative|bad|poor)\b', re.I)
 _RETURN_RE = re.compile(r'\b(returns?|returned|refund)\b', re.I)
 _FEEDBACK_RE = re.compile(r'\b(feedback|complaints?|reviews?)\b', re.I)
 _SALES_RE = re.compile(r'\b(sales?|selling|revenue|units?\s+sold|high\s+sales|good\s+sales|many\s+sales)\b', re.I)
+# Superlative sales ranking (must be checked before plain "high sales").
+_HIGHEST_SALES_RE = re.compile(
+    r'\b(highest|top|most)\b.{0,40}\b(sales?|selling)\b|'
+    r'\btop[- ]selling\b',
+    re.I,
+)
 _BRAND_RE = re.compile(r'\bbrands?\b', re.I)
 _CATEGORY_RE = re.compile(r'\bcategor(y|ies)\b', re.I)
 _PRODUCT_ID_RE = re.compile(r'\bproduct(?:\s*id)?\s*[#:]?\s*(\d+)\b', re.I)
@@ -91,6 +107,7 @@ def parse_retrieval_intent(question: str) -> RetrievalIntent:
     has_return = bool(_RETURN_RE.search(q))
     has_feedback = bool(_FEEDBACK_RE.search(q))
     has_sales = bool(_SALES_RE.search(q))
+    has_highest_sales = bool(_HIGHEST_SALES_RE.search(q))
     has_brand = bool(_BRAND_RE.search(q))
     has_category = bool(_CATEGORY_RE.search(q))
 
@@ -156,7 +173,7 @@ def parse_retrieval_intent(question: str) -> RetrievalIntent:
             category_id=category_id,
         )
 
-    # High sales + quality issues
+    # High sales + quality issues (median) vs highest/top/most + quality (single max)
     if has_sales and has_quality:
         return RetrievalIntent(
             intent_type=PRODUCTS_HIGH_SALES_AND_QUALITY_ISSUES,
@@ -168,7 +185,8 @@ def parse_retrieval_intent(question: str) -> RetrievalIntent:
             ],
             filters={
                 'require_issue': True,
-                'sales_threshold': 'median_or_above',
+                'sales_threshold': 'highest' if has_highest_sales else 'median_or_above',
+                'quality_issue_names': list(QUALITY_ISSUE_NAMES),
             },
         )
 
@@ -221,7 +239,10 @@ def parse_retrieval_intent(question: str) -> RetrievalIntent:
                 'Product-HAS_FEEDBACK->CustomerFeedback',
                 'CustomerFeedback-ABOUT_ISSUE->Issue',
             ],
-            filters={'require_issue': True},
+            filters={
+                'require_issue': True,
+                'quality_issue_names': list(QUALITY_ISSUE_NAMES),
+            },
         )
 
     if has_negative and has_feedback:

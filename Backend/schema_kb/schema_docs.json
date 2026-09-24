@@ -7,8 +7,8 @@
     "customer_queries stores RetailAsk owner chat history with the bot — not customer product feedback.",
     "customer_feedback stores customer sentiment, issues, and returns about products.",
     "Return information is on customer_feedback.is_return and customer_feedback.return_reason (no separate returns table).",
-    "Business semantics — high sales / high-selling: measure each product's total units sold as SUM(sales.quantity). Treat a product as high-selling when that total is greater than or equal to the median of per-product SUM(sales.quantity) values across products that have sales. Compute that median dynamically in MySQL 8 using window functions (ROW_NUMBER() OVER (ORDER BY total_quantity) and COUNT(*) OVER (), then AVG of middle row(s) with rn IN ((cnt + 1) / 2, (cnt + 2) / 2)). Do NOT use LIMIT/OFFSET expressions with nested SELECT arithmetic to compute the median (invalid in MySQL). Do NOT invent absolute thresholds such as SUM(quantity) > 100. Do NOT hardcode a fixed median number from memory.",
-    "Business semantics — quality issues: a product has a quality issue when it has customer_feedback linked to an Issue (customer_feedback.issue_id IS NOT NULL and/or JOIN issues). Quality issues are NOT the same as returns. Do NOT filter on customer_feedback.is_return when the question asks about quality issues unless the question also explicitly mentions returns.",
+    "Business semantics — high sales / high-selling vs highest / top / most: measure each product's total units sold as SUM(sales.quantity). For high sales / high-selling (relative threshold), treat a product as high-selling when that total is greater than or equal to the median of per-product SUM(sales.quantity) values across products that have sales. Compute that median dynamically in MySQL 8 using window functions (ROW_NUMBER() OVER (ORDER BY total_quantity) and COUNT(*) OVER (), then AVG of middle row(s) with rn IN ((cnt + 1) / 2, (cnt + 2) / 2)). Do NOT use LIMIT/OFFSET expressions with nested SELECT arithmetic to compute the median (invalid in MySQL). Do NOT invent absolute thresholds such as SUM(quantity) > 100. Do NOT hardcode a fixed median number from memory. For highest / top / most sales (superlative ranking), do NOT use the median rule; order by total_quantity DESC and take LIMIT 1 (or an equivalent MAX). Apply the median rule only when the question says high or high-selling, not when it says highest, top, or most.",
+    "Business semantics — quality issues: a product has a quality issue only when customer_feedback is linked to an Issue whose issues.issue_name is one of: Defective product, Battery life, Durability, Compatibility, Packaging damage (JOIN issues and filter on those names; do not treat every non-NULL issue_id as a quality issue). Explicitly exclude Late delivery, Wrong item received, and Pricing concern from quality-issue analysis. Quality issues are NOT the same as returns. Do NOT filter on customer_feedback.is_return when the question asks about quality issues unless the question also explicitly mentions returns.",
     "Business semantics — returns: use customer_feedback.is_return = 1 only when the user's question explicitly refers to returns/returned/refunds.",
     "Business semantics — do not invent feedback-count thresholds such as COUNT(feedback_id) > 5 (or similar) unless the user explicitly asks for a count or numeric threshold."
   ],
@@ -63,7 +63,7 @@
     },
     {
       "table_name": "sales",
-      "purpose": "Sales / transaction line items. Each row records quantity and revenue for one product on a sale date. Use for revenue totals, top-selling products, sales trends, and high-sales analysis via SUM(quantity) compared to the dynamic median of per-product totals.",
+      "purpose": "Sales / transaction line items (quantity, total_price, sale_date). See Notes for high vs highest sales rules using SUM(quantity).",
       "columns": [
         {
           "name": "sale_id",
@@ -153,7 +153,7 @@
     },
     {
       "table_name": "issues",
-      "purpose": "Issue type lookup for customer feedback (quality problems, delivery, compatibility, etc.). Join from customer_feedback.issue_id when analyzing quality issues or issue types. Having an issue link means a quality/classified issue — not a return flag.",
+      "purpose": "Issue type lookup (issue_id, issue_name). For quality-issue questions, JOIN from customer_feedback and apply the quality allowlist in Notes — not every issue_name is a quality issue.",
       "columns": [
         {
           "name": "issue_id",
@@ -176,7 +176,7 @@
     },
     {
       "table_name": "customer_feedback",
-      "purpose": "Customer product feedback for retail-owner analytics. Includes sentiment (positive/negative/neutral), optional issue link (quality/classified issues via issue_id), and separate return flags (is_return). Quality issues use issue_id/JOIN issues; returns use is_return only when asked. NOT the same as customer_queries chat history.",
+      "purpose": "Customer product feedback (sentiment, issue_id, is_return). Quality issues use issue_id→issues with the Notes allowlist; returns use is_return only when asked. Not customer_queries.",
       "columns": [
         {
           "name": "feedback_id",
@@ -191,7 +191,7 @@
         {
           "name": "issue_id",
           "type": "INT NULL",
-          "meaning": "Optional foreign key to issues.issue_id — classified quality/issue type. Non-NULL means this feedback is linked to a quality issue. Not equivalent to is_return."
+          "meaning": "Optional FK to issues.issue_id. Quality vs non-quality issue names are defined in Notes — not equivalent to is_return."
         },
         {
           "name": "feedback_text",

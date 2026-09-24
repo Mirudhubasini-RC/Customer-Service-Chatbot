@@ -70,11 +70,15 @@ def run_sql_agent(
     is_safe_select_fn: SafeSelectFn | None = None,
     execute_sql_fn: ExecuteSqlFn | None = None,
     explain_rows_fn: ExplainRowsFn | None = None,
+    explain_rows: bool = True,
 ) -> dict[str, Any]:
     """
     Run the SQL Agent pipeline for a retail analytics question.
 
-    Flow: Schema RAG → Qwen SQL → safety validation → MySQL → NL answer.
+    Flow: Schema RAG → Qwen SQL → safety validation → MySQL → (optional) NL answer.
+
+    When explain_rows is False (e.g. sql_and_graph orchestration), skip the
+    explain_rows LLM call and return raw rows for downstream synthesis.
 
     Injectable callables are for unit tests; production uses app.py helpers.
     """
@@ -88,10 +92,16 @@ def run_sql_agent(
 
     # Lazy imports keep the agent importable in tests without loading Flask/app eagerly
     # when all dependencies are injected.
-    if generate_sql_fn is None or is_safe_select_fn is None or execute_sql_fn is None or explain_rows_fn is None:
+    need_explain = explain_rows and explain_rows_fn is None
+    if (
+        generate_sql_fn is None
+        or is_safe_select_fn is None
+        or execute_sql_fn is None
+        or need_explain
+    ):
         from app import (
             execute_sql_query,
-            explain_rows,
+            explain_rows as explain_rows_impl,
             generate_sql,
             is_safe_select,
         )
@@ -102,8 +112,8 @@ def run_sql_agent(
             is_safe_select_fn = is_safe_select
         if execute_sql_fn is None:
             execute_sql_fn = execute_sql_query
-        if explain_rows_fn is None:
-            explain_rows_fn = explain_rows
+        if need_explain:
+            explain_rows_fn = explain_rows_impl
 
     schema_context: dict[str, Any] = {}
     sql: str | None = None
@@ -172,8 +182,18 @@ def run_sql_agent(
             answer=EMPTY_ROWS_ANSWER,
         )
 
+    if not explain_rows:
+        # Raw rows are the source of truth for sql_and_graph synthesis.
+        return _success(
+            q,
+            schema_context=schema_context,
+            sql=sql,
+            rows=rows,
+            answer='',
+        )
+
     try:
-        answer = explain_rows_fn(q, sql, rows)
+        answer = explain_rows_fn(q, sql, rows)  # type: ignore[misc]
     except Exception as exc:
         logger.exception('SQL Agent: explain failed, using row preview | %s', exc)
         preview = rows[:10]

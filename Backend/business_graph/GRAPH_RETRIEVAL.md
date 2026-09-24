@@ -25,10 +25,10 @@ This step **stops at context**. It does not generate a final answer.
 
 `GraphRetriever` issues relationship-aware queries such as:
 
-- `(:Product)-[:HAS_FEEDBACK]->(:CustomerFeedback)-[:ABOUT_ISSUE]->(:Issue)` for quality issues
+- `(:Product)-[:HAS_FEEDBACK]->(:CustomerFeedback)-[:ABOUT_ISSUE]->(:Issue)` for quality issues, restricted to these `issue_name` values: **Defective product**, **Battery life**, **Durability**, **Compatibility**, **Packaging damage**. Non-quality catalog issues (**Late delivery**, **Wrong item received**, **Pricing concern**) are excluded from quality retrieval even though they remain in the graph seed.
 - filters on `sentiment` / `is_return` for negative feedback + returns
 - `(:Brand)-[:HAS_PRODUCT]->(:Product)-[:HAS_FEEDBACK]->(:CustomerFeedback)` for brand-level negatives
-- sales aggregation + issue paths for “high sales and quality issues” (median sales threshold)
+- sales aggregation + the same quality-issue path/filter for “high sales and quality issues” (median sales threshold), or for “highest / top / most sales and quality issues” return only the single top product by sales units
 
 Structured helpers also exist: `retrieve_product_context`, `retrieve_product_feedback`, `retrieve_product_sales`, `retrieve_product_issues`, `retrieve_brand_products`, `retrieve_category_products`.
 

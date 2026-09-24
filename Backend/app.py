@@ -89,23 +89,17 @@ CHAT_SYSTEM_PROMPT = (
 
 SQL_GENERATION_SYSTEM_PROMPT = (
     'You convert retail analytics questions into a single MySQL SELECT query. '
-    'Use ONLY the retrieved schema context provided by Schema RAG, including its Notes / '
-    'business semantics. '
-    'Do NOT invent business thresholds that are not in the question or schema notes '
-    '(no absolute sales cutoffs like quantity > 100; no invented feedback-count cutoffs '
-    'like COUNT(feedback) > 5). '
-    'When the schema notes define relative measures (for example high sales via a dynamic '
-    'median of per-product SUM(quantity)), implement that definition in SQL. '
-    'When dynamic median is required, use MySQL 8-compatible window functions such as '
-    'ROW_NUMBER() and COUNT() OVER() rather than constructing LIMIT/OFFSET expressions '
-    'with subqueries. A valid pattern is: aggregate per-product totals in a CTE, rank with '
-    'ROW_NUMBER() OVER (ORDER BY total_quantity) and COUNT(*) OVER (), take AVG of the '
-    'middle row(s) via rn IN ((cnt + 1) / 2, (cnt + 2) / 2), then filter '
-    'total_quantity >= that median. Do not hardcode a numeric median. '
-    'Do not invent invalid MySQL syntax such as LIMIT <expression> with nested SELECT arithmetic. '
-    'Prefer the simplest valid MySQL that answers the question; use CTEs only when helpful. '
-    'Returns (is_return) are NOT the same as quality issues (issue_id / JOIN issues); '
-    'use is_return only when the question explicitly mentions returns. '
+    'Use ONLY the retrieved schema context from Schema RAG. Its Notes are authoritative for '
+    'business semantics: high vs highest sales, quality-issue allowlist/exclusions, '
+    'SUM(sales.quantity) definitions, and the customer_feedback→issues quality path. '
+    'Do NOT invent thresholds not in the question or schema notes '
+    '(no absolute sales cutoffs like quantity > 100; no invented feedback-count cutoffs). '
+    'Follow Notes: high/high-selling → dynamic median of per-product SUM(quantity) via '
+    'MySQL 8 ROW_NUMBER()/COUNT() OVER() (never LIMIT/OFFSET subquery arithmetic); '
+    'highest/top/most → ORDER BY total_quantity DESC LIMIT 1 (or equivalent MAX), not median. '
+    'Do not hardcode a median. Prefer the simplest valid MySQL; use CTEs only when helpful. '
+    'Returns (is_return) are NOT quality issues — use is_return only when the question '
+    'explicitly mentions returns. '
     'Return ONLY SQL. No markdown, no explanation. '
     'If the question cannot be answered from the retrieved schema, return exactly: UNSUPPORTED'
 )
@@ -212,6 +206,20 @@ def call_llm(messages, max_tokens=220, temperature=0.2):
 
     if isinstance(api_response, dict) and 'error' in api_response:
         raise RuntimeError(str(api_response['error']))
+
+    # TEMP: token-usage diagnostics (OpenAI-compat / Ollama). Remove after measurement.
+    if isinstance(api_response, dict):
+        usage = api_response.get('usage') or {}
+        if usage:
+            logger.info(
+                'LLM usage | prompt_tokens=%s | completion_tokens=%s | total_tokens=%s | max_tokens=%s',
+                usage.get('prompt_tokens'),
+                usage.get('completion_tokens'),
+                usage.get('total_tokens'),
+                max_tokens,
+            )
+        else:
+            logger.info('LLM usage | (no usage field in response) | max_tokens=%s', max_tokens)
 
     choices = api_response.get('choices') if isinstance(api_response, dict) else None
     if choices:
