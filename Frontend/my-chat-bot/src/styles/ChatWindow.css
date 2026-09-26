@@ -99,6 +99,52 @@
   word-break: break-all;
 }
 
+.pipeline-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pipeline-meta-row .pipeline-model {
+  margin-bottom: 0;
+}
+
+.route-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.route-pill.route-sql {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.route-pill.route-graph {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.route-pill.route-sql_and_graph {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.route-pill.route-general,
+.route-pill.route-direct {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
 .pipeline-model code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.74rem;
@@ -317,14 +363,40 @@
 
 .practice-list {
   margin: 0;
-  padding-left: 18px;
-  color: var(--ink);
-  font-size: 0.92rem;
-  line-height: 1.7;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .practice-list li {
-  margin-bottom: 2px;
+  margin: 0;
+}
+
+.practice-chip {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(91, 33, 182, 0.16);
+  background: #fbfaff;
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.practice-chip:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: rgba(91, 33, 182, 0.35);
+}
+
+.practice-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .message {

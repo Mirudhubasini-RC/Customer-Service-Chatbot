@@ -44,13 +44,44 @@ const ProductsIcon = () => (
 );
 
 const DEFAULT_PRACTICE_QUESTIONS = [
-  'What were our total sales this month?',
-  'Which products are selling the most?',
-  'Can you recommend products for a first-time buyer?',
-  'What is the average order value?',
-  'Summarize recent customer support queries.',
-  'Which product has the highest price?',
+  'How much revenue did we make?',
+  'Which products have the highest sales?',
+  'Which products have quality issues?',
+  'Which products have negative feedback and returns?',
+  'Which products have high sales and quality issues?',
+  'Which high-selling products also have negative feedback?',
+  'For products with quality issues, what issue types are linked and which brands do they belong to?',
+  'What is customer retention?',
 ];
+
+const ROUTE_LABELS = {
+  sql: 'SQL Agent',
+  graph: 'Graph Agent',
+  sql_and_graph: 'SQL + Graph',
+  general: 'General',
+};
+
+const emptyPipelineMeta = () => ({
+  model: '',
+  route: '',
+  sql: null,
+  rows: [],
+  graph: null,
+});
+
+/** Escape plain answers; light markdown (**bold**, newlines). Leave HTML tables intact. */
+const formatBotHtml = (text) => {
+  if (!text) return '';
+  if (text.includes('<table') || text.includes('table-scroll')) {
+    return text;
+  }
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br/>');
+};
 
 const ChatWindow = () => {
   const [messages, setMessages] = useState([]);
@@ -60,15 +91,10 @@ const ChatWindow = () => {
     DEFAULT_PRACTICE_QUESTIONS,
   );
   const [pipeline, setPipeline] = useState([]);
-  const [pipelineMeta, setPipelineMeta] = useState({
-    model: '',
-    sql: null,
-    rows: [],
-  });
+  const [pipelineMeta, setPipelineMeta] = useState(emptyPipelineMeta());
   const historyRef = useRef(null);
 
   useEffect(() => {
-    // Optional refresh from API; keep local defaults so cold starts don't blank the UI
     fetchPracticeQuestions()
       .then((questions) => {
         if (Array.isArray(questions) && questions.length > 0) {
@@ -89,9 +115,24 @@ const ChatWindow = () => {
   const setLoadingPipeline = (question) => {
     setPipeline([
       { id: 1, title: 'User question', status: 'done', detail: question },
-      { id: 2, title: 'AI → SQL', status: 'running', detail: 'Generating SQL…' },
-      { id: 3, title: 'Run SQL on MySQL', status: 'pending', detail: 'Waiting…' },
-      { id: 4, title: 'AI answer', status: 'pending', detail: 'Waiting…' },
+      {
+        id: 2,
+        title: 'Supervisor route',
+        status: 'running',
+        detail: 'Choosing SQL / Graph / both / general…',
+      },
+      {
+        id: 3,
+        title: 'Specialized agents',
+        status: 'pending',
+        detail: 'Waiting for route…',
+      },
+      {
+        id: 4,
+        title: 'Final answer',
+        status: 'pending',
+        detail: 'Waiting…',
+      },
     ]);
   };
 
@@ -105,20 +146,22 @@ const ChatWindow = () => {
     setInput('');
     setLoading(true);
     setLoadingPipeline(trimmed);
-    setPipelineMeta({ model: '', sql: null, rows: [] });
+    setPipelineMeta(emptyPipelineMeta());
 
     try {
       const data = await sendQuery(trimmed);
       if (data.error && !data.answer) {
         throw new Error(data.error);
       }
-      const botMessage = data.answer || 'No response from agent';
+      const botMessage = formatBotHtml(data.answer || 'No response from agent');
       setMessages([...updatedMessages, { text: botMessage, type: 'bot' }]);
       setPipeline(data.pipeline || []);
       setPipelineMeta({
         model: data.model || '',
+        route: data.route || '',
         sql: data.sql || null,
         rows: data.rows || [],
+        graph: data.graph || null,
       });
     } catch (error) {
       console.error('Error sending message:', error);
@@ -149,6 +192,10 @@ const ChatWindow = () => {
       event.preventDefault();
       handleSend();
     }
+  };
+
+  const handlePracticeClick = (question) => {
+    askAgent(question);
   };
 
   const handleIconClick = async (type) => {
@@ -187,15 +234,17 @@ const ChatWindow = () => {
         { id: 1, title: 'User action', status: 'done', detail: label },
         {
           id: 2,
-          title: 'Direct DB fetch',
+          title: 'Direct DB fetch (bypass agents)',
           status: 'done',
           detail: `${(response || []).length} row(s) from MySQL`,
         },
       ]);
       setPipelineMeta({
         model: 'direct-api',
+        route: 'direct',
         sql: type === 'sales' ? 'SELECT * FROM sales' : 'SELECT * FROM products',
         rows: (response || []).slice(0, 20),
+        graph: null,
       });
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -225,6 +274,12 @@ const ChatWindow = () => {
     </table></div>`;
   };
 
+  const routeLabel = ROUTE_LABELS[pipelineMeta.route] || pipelineMeta.route;
+  const graphIntent =
+    pipelineMeta.graph &&
+    pipelineMeta.graph.intent &&
+    pipelineMeta.graph.intent.intent_type;
+
   return (
     <div className="chat-wrapper">
       <div className="workspace">
@@ -232,23 +287,37 @@ const ChatWindow = () => {
           <div className="chat-toolbar">
             <div>
               <p className="chat-title">RetailAsk</p>
-              <p className="chat-subtitle">Retail analytics assistant</p>
+              <p className="chat-subtitle">
+                Supervisor · SQL Agent · Graph-RAG Agent
+              </p>
             </div>
             <span className={`status-dot ${loading ? 'busy' : 'online'}`}>
-              {loading ? 'Thinking' : 'Online'}
+              {loading ? 'Routing…' : 'Online'}
             </span>
           </div>
 
           <div className="chat-history" ref={historyRef}>
             {messages.length === 0 && (
               <div className="empty-state">
-                <p className="empty-title">Ask the agent about your retail store</p>
+                <p className="empty-title">
+                  Ask RetailAsk — it routes to the right agent
+                </p>
                 <p className="empty-hint">
-                  Type any of these sample questions to test the agent:
+                  SQL for metrics · Graph for product–feedback–issue links · both
+                  when needed. Try a sample:
                 </p>
                 <ul className="practice-list">
                   {practiceQuestions.map((question) => (
-                    <li key={question}>{question}</li>
+                    <li key={question}>
+                      <button
+                        type="button"
+                        className="practice-chip"
+                        onClick={() => handlePracticeClick(question)}
+                        disabled={loading}
+                      >
+                        {question}
+                      </button>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -276,7 +345,7 @@ const ChatWindow = () => {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about sales, products, stock..."
+              placeholder="Ask about sales, quality issues, returns, brands…"
               onKeyPress={handleKeyPress}
               disabled={loading}
             />
@@ -316,67 +385,104 @@ const ChatWindow = () => {
 
         <aside className="pipeline-panel">
           <div className="pipeline-header">
-            <p className="pipeline-title">AI Pipeline</p>
+            <p className="pipeline-title">Agent Pipeline</p>
             <p className="pipeline-subtitle">
-              Proof the answer came from the model + database
+              Supervisor decides the route; specialized agents query MySQL and/or
+              Neo4j
             </p>
           </div>
 
           <div className="pipeline-scroll">
-          {pipelineMeta.model && (
-            <div className="pipeline-model">
-              Model: <code>{pipelineMeta.model}</code>
-            </div>
-          )}
-
-          {pipeline.length === 0 ? (
-            <div className="pipeline-empty">
-              Ask a retail question to see:
-              <ul>
-                <li>AI turning your question into SQL</li>
-                <li>SQL running on MySQL</li>
-                <li>AI writing the final answer</li>
-              </ul>
-            </div>
-          ) : (
-            <ol className="pipeline-steps">
-              {pipeline.map((step) => (
-                <li
-                  key={step.id}
-                  className={`pipeline-step status-${step.status || 'done'}`}
-                >
-                  <div className="step-top">
-                    <span className="step-badge">{step.id}</span>
-                    <span className="step-title">{step.title}</span>
-                    <span className={`step-status ${step.status || 'done'}`}>
-                      {step.status || 'done'}
-                    </span>
+            {(pipelineMeta.model || pipelineMeta.route) && (
+              <div className="pipeline-meta-row">
+                {pipelineMeta.route && (
+                  <span className={`route-pill route-${pipelineMeta.route}`}>
+                    {routeLabel || pipelineMeta.route}
+                  </span>
+                )}
+                {pipelineMeta.model && (
+                  <div className="pipeline-model">
+                    Model: <code>{pipelineMeta.model}</code>
                   </div>
-                  {step.model && (
-                    <p className="step-model">via {step.model}</p>
+                )}
+              </div>
+            )}
+
+            {pipeline.length === 0 ? (
+              <div className="pipeline-empty">
+                Ask a question to see:
+                <ul>
+                  <li>Supervisor choosing sql / graph / both / general</li>
+                  <li>Schema RAG + SQL Agent on MySQL</li>
+                  <li>Graph retrieval + Graph-RAG on Neo4j</li>
+                  <li>Synthesis when both sources are needed</li>
+                </ul>
+              </div>
+            ) : (
+              <ol className="pipeline-steps">
+                {pipeline.map((step) => (
+                  <li
+                    key={step.id}
+                    className={`pipeline-step status-${step.status || 'done'}`}
+                  >
+                    <div className="step-top">
+                      <span className="step-badge">{step.id}</span>
+                      <span className="step-title">{step.title}</span>
+                      <span className={`step-status ${step.status || 'done'}`}>
+                        {step.status || 'done'}
+                      </span>
+                    </div>
+                    {step.model && (
+                      <p className="step-model">via {step.model}</p>
+                    )}
+                    <pre className="step-detail">{step.detail}</pre>
+                  </li>
+                ))}
+              </ol>
+            )}
+
+            {pipelineMeta.sql && (
+              <div className="pipeline-block">
+                <p className="block-label">Generated SQL</p>
+                <pre>{pipelineMeta.sql}</pre>
+              </div>
+            )}
+
+            {pipelineMeta.rows && pipelineMeta.rows.length > 0 && (
+              <div className="pipeline-block">
+                <p className="block-label">
+                  MySQL preview ({pipelineMeta.rows.length} row
+                  {pipelineMeta.rows.length === 1 ? '' : 's'})
+                </p>
+                <pre>
+                  {JSON.stringify(pipelineMeta.rows.slice(0, 5), null, 2)}
+                </pre>
+              </div>
+            )}
+
+            {pipelineMeta.graph && (
+              <div className="pipeline-block">
+                <p className="block-label">
+                  Graph context
+                  {graphIntent ? ` · ${graphIntent}` : ''}
+                  {typeof pipelineMeta.graph.fact_count === 'number'
+                    ? ` · ${pipelineMeta.graph.fact_count} fact(s)`
+                    : ''}
+                </p>
+                <pre>
+                  {JSON.stringify(
+                    {
+                      intent: pipelineMeta.graph.intent || null,
+                      facts_preview: (
+                        pipelineMeta.graph.facts_preview || []
+                      ).slice(0, 6),
+                    },
+                    null,
+                    2,
                   )}
-                  <pre className="step-detail">{step.detail}</pre>
-                </li>
-              ))}
-            </ol>
-          )}
-
-          {pipelineMeta.sql && (
-            <div className="pipeline-block">
-              <p className="block-label">Generated SQL</p>
-              <pre>{pipelineMeta.sql}</pre>
-            </div>
-          )}
-
-          {pipelineMeta.rows && pipelineMeta.rows.length > 0 && (
-            <div className="pipeline-block">
-              <p className="block-label">
-                DB preview ({pipelineMeta.rows.length} row
-                {pipelineMeta.rows.length === 1 ? '' : 's'})
-              </p>
-              <pre>{JSON.stringify(pipelineMeta.rows.slice(0, 5), null, 2)}</pre>
-            </div>
-          )}
+                </pre>
+              </div>
+            )}
           </div>
         </aside>
       </div>

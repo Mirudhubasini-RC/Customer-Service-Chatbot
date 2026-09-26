@@ -2,7 +2,7 @@
 Supervisor + Agent Orchestration (Step 4D).
 
 Routes via the Supervisor, then executes SQL Agent / Graph Agent as needed.
-Does not modify agent internals. Does not wire /query. No A2A yet.
+Wired to Flask /query via app.answer_query. No A2A yet.
 """
 
 from __future__ import annotations

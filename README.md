@@ -44,20 +44,53 @@ python demo_schema_rag.py --with-sql
 
 ## Business Graph (Step 3B)
 
-RetailAsk keeps a **business graph** of Brand, Product, Category, Sale, CustomerFeedback, and Issue so owners can inspect relationship-shaped retail facts.
+RetailAsk keeps a **business graph** of Brand, Product, Category, Sale, CustomerFeedback, and Issue.
 
-- **Why:** sales ↔ product ↔ feedback ↔ issue paths are awkward as pure SQL narratives but natural as graph traversals.
-- **Entities / relationships:** see [`Backend/business_graph/README.md`](Backend/business_graph/README.md).
-- **Storage:** in-memory `GraphStore` interface (`InMemoryGraphStore` now; Neo4j-swappable later). No Neo4j required for this step.
-- **Build:** from MySQL FKs only (or offline `seed_fixture` matching `seed.sql`).
-- **Not in this step:** question → graph retrieval → Qwen answering, agents, or frontend changes.
+- **Persistent storage:** Neo4j via `Neo4jGraphStore` (implements `GraphStore`)
+- **Fallback / unit tests:** `InMemoryGraphStore`
+- **Sync:** MySQL → `BusinessGraphBuilder` → Neo4j (`MERGE`, uniqueness constraints)
+- **Not in this step:** question → graph retrieval → Qwen, agents, or frontend changes
+
+Docs: [`Backend/business_graph/README.md`](Backend/business_graph/README.md)
 
 ```bash
 cd Backend
 source venv/bin/activate
+pip install -r ../requirements.txt
+
+# Neo4j sync + traversal demo
+python demo_business_graph.py --neo4j
+
+# Offline in-memory demo
 python demo_business_graph.py --seed-only
+
+# Unit tests (no Neo4j)
 python -m unittest tests.test_business_graph -v
+
+# Neo4j integration tests (skips if Neo4j env missing)
+python -m unittest tests.test_business_graph_neo4j -v
 ```
+
+Env: `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` (see `Backend/.env.example`).
+
+## Graph Retrieval (Step 3C)
+
+Retrieves relationship-shaped facts from Neo4j (intent → Cypher → context). Does **not** call Qwen yet.
+
+```bash
+cd Backend
+source venv/bin/activate
+python demo_graph_retrieval.py
+python -m unittest tests.test_graph_retrieval -v
+```
+
+### Graph RAG (Step 3D)
+```bash
+python demo_graph_rag.py
+python -m unittest tests.test_graph_rag tests.test_graph_retrieval -v
+```
+
+See [`Backend/business_graph/README.md`](Backend/business_graph/README.md).
 
 ## Deploy on Render (recommended)
 

@@ -105,12 +105,16 @@ SQL_GENERATION_SYSTEM_PROMPT = (
 )
 
 PRACTICE_QUESTIONS = [
-    'What were our total sales this month?',
-    'Which products are selling the most?',
-    'Can you recommend products for a first-time buyer?',
+    'How much revenue did we make?',
+    'Which products have the highest sales?',
+    'Which products have high sales?',
+    'Which products have quality issues?',
+    'Which products have negative feedback and returns?',
+    'Which products have high sales and quality issues?',
+    'Which high-selling products also have negative feedback?',
+    'For products with quality issues, what issue types are linked and which brands do they belong to?',
     'What is the average order value?',
-    'Summarize recent customer support queries.',
-    'Which category has the highest revenue?',
+    'What is customer retention?',
 ]
 
 DATA_HINTS = (
@@ -206,20 +210,6 @@ def call_llm(messages, max_tokens=220, temperature=0.2):
 
     if isinstance(api_response, dict) and 'error' in api_response:
         raise RuntimeError(str(api_response['error']))
-
-    # TEMP: token-usage diagnostics (OpenAI-compat / Ollama). Remove after measurement.
-    if isinstance(api_response, dict):
-        usage = api_response.get('usage') or {}
-        if usage:
-            logger.info(
-                'LLM usage | prompt_tokens=%s | completion_tokens=%s | total_tokens=%s | max_tokens=%s',
-                usage.get('prompt_tokens'),
-                usage.get('completion_tokens'),
-                usage.get('total_tokens'),
-                max_tokens,
-            )
-        else:
-            logger.info('LLM usage | (no usage field in response) | max_tokens=%s', max_tokens)
 
     choices = api_response.get('choices') if isinstance(api_response, dict) else None
     if choices:
@@ -528,145 +518,197 @@ def ask_chat_agent(query_text):
     return answer
 
 
-def answer_query(query_text):
-    logger.info('--- New query --- | %s', query_text)
-    model = os.getenv('HF_MODEL', MODEL)
+def _active_model_label() -> str:
+    """Human-readable active LLM for UI pipeline display."""
+    try:
+        endpoint = _llm_endpoint()
+        return f"{endpoint.get('provider')}:{endpoint.get('model')}"
+    except Exception:
+        return os.getenv('GROQ_MODEL') or os.getenv('OLLAMA_MODEL') or MODEL
 
-    def with_pipeline(result, steps):
-        result['pipeline'] = steps
-        result['model'] = model
-        return result
 
-    if looks_like_data_question(query_text):
-        sql, schema_meta = generate_sql(query_text)
-        schema_tables = schema_meta.get('expanded_tables') or schema_meta.get('retrieved_tables') or []
-        schema_scores = schema_meta.get('scores') or {}
-        schema_detail = (
-            f"tables={', '.join(schema_tables)}; "
-            f"scores={json.dumps(schema_scores)}"
-        )
-        if sql:
-            rows = execute_sql_query(sql)
-            logger.info('SQL executed | row_count=%s | preview=%s', len(rows), json.dumps(rows[:5], default=str))
-            base_steps = [
-                {'id': 1, 'title': 'User question', 'status': 'done', 'detail': query_text},
-                {
-                    'id': 2,
-                    'title': 'Schema RAG',
-                    'status': 'done',
-                    'detail': schema_detail,
-                },
-                {
-                    'id': 3,
-                    'title': 'AI → SQL',
-                    'status': 'done',
-                    'detail': sql,
-                    'model': model,
-                },
-                {
-                    'id': 4,
-                    'title': 'Run SQL on MySQL',
-                    'status': 'done',
-                    'detail': f'{len(rows)} row(s) returned',
-                },
-            ]
-            if not rows:
-                answer = 'I ran that against the database, but no matching rows were found.'
-                logger.info('Final response | %s', answer)
-                return with_pipeline(
-                    {
-                        'answer': answer,
-                        'sql': sql,
-                        'rows': [],
-                        'schema_rag': schema_meta,
-                    },
-                    base_steps
-                    + [
-                        {
-                            'id': 5,
-                            'title': 'AI answer',
-                            'status': 'done',
-                            'detail': answer,
-                            'model': model,
-                        }
-                    ],
-                )
-            try:
-                explanation = explain_rows(query_text, sql, rows)
-            except Exception as exc:
-                logger.exception('Explain failed, falling back to raw rows | %s', exc)
-                explanation = (
-                    f'Here are the results from the database ({len(rows)} row(s)): '
-                    f'{json.dumps(rows[:10], default=str)}'
-                )
-            logger.info('Final response | sql=%s | answer=%s', sql, explanation)
-            return with_pipeline(
-                {
-                    'answer': explanation,
-                    'sql': sql,
-                    'rows': rows[:50],
-                    'schema_rag': schema_meta,
-                },
-                base_steps
-                + [
-                    {
-                        'id': 5,
-                        'title': 'AI answer from results',
-                        'status': 'done',
-                        'detail': explanation,
-                        'model': model,
-                    }
-                ],
-            )
+def _pipeline_from_orchestrator(query_text: str, result: dict) -> list[dict]:
+    """Build UI pipeline steps from a Supervisor + agents result."""
+    model = _active_model_label()
+    route = (result.get('route') or 'general').strip().lower()
+    routing = result.get('routing') or {}
+    results = result.get('results') or {}
+    answer = result.get('answer') or ''
 
-        if re.search(r'\b(stock|inventory)\b', query_text.lower()):
-            answer = (
-                'Stock/inventory levels are not stored in the current database. '
-                'I can help with sales totals, top products, prices, and recent support queries.'
-            )
-            logger.info('Final response | %s', answer)
-            return with_pipeline(
-                {'answer': answer, 'sql': None, 'rows': [], 'schema_rag': schema_meta},
-                [
-                    {'id': 1, 'title': 'User question', 'status': 'done', 'detail': query_text},
-                    {
-                        'id': 2,
-                        'title': 'Schema RAG',
-                        'status': 'done',
-                        'detail': schema_detail,
-                    },
-                    {
-                        'id': 3,
-                        'title': 'AI → SQL',
-                        'status': 'skipped',
-                        'detail': 'Schema has no stock/inventory fields',
-                        'model': model,
-                    },
-                    {
-                        'id': 4,
-                        'title': 'AI answer',
-                        'status': 'done',
-                        'detail': answer,
-                        'model': model,
-                    },
-                ],
-            )
+    steps = [
+        {'id': 1, 'title': 'User question', 'status': 'done', 'detail': query_text},
+        {
+            'id': 2,
+            'title': 'Supervisor route',
+            'status': 'done',
+            'detail': (
+                f"route={route}\n"
+                f"reason={routing.get('reason') or '(none)'}"
+            ),
+            'model': model,
+        },
+    ]
+    next_id = 3
 
-    chat = ask_chat_agent(query_text)
-    logger.info('Final response | %s', chat)
-    return with_pipeline(
-        {'answer': chat, 'sql': None, 'rows': []},
-        [
-            {'id': 1, 'title': 'User question', 'status': 'done', 'detail': query_text},
+    if route == 'general':
+        steps.append(
             {
-                'id': 2,
-                'title': 'AI chat response',
+                'id': next_id,
+                'title': 'General (no DB agents)',
                 'status': 'done',
-                'detail': chat,
+                'detail': answer,
+            }
+        )
+        return steps
+
+    if route in {'sql', 'sql_and_graph'}:
+        sql_result = results.get('sql') or {}
+        schema = sql_result.get('schema_context') or {}
+        tables = schema.get('expanded_tables') or schema.get('retrieved_tables') or []
+        scores = schema.get('scores') or {}
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'Schema RAG',
+                'status': 'done' if tables else 'skipped',
+                'detail': (
+                    f"tables={', '.join(tables) if tables else '(none)'}; "
+                    f"scores={json.dumps(scores)}"
+                ),
+            }
+        )
+        next_id += 1
+        sql = sql_result.get('sql')
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'SQL Agent → MySQL',
+                'status': 'done' if sql_result.get('success') else 'error',
+                'detail': sql
+                or sql_result.get('error')
+                or sql_result.get('answer')
+                or '(no SQL)',
                 'model': model,
-            },
-        ],
+            }
+        )
+        next_id += 1
+        rows = sql_result.get('rows') or []
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'MySQL result',
+                'status': 'done' if sql_result.get('success') else 'error',
+                'detail': f'{len(rows)} row(s)'
+                + (
+                    f' | preview={json.dumps(rows[:3], default=str)}'
+                    if rows
+                    else ''
+                ),
+            }
+        )
+        next_id += 1
+
+    if route in {'graph', 'sql_and_graph'}:
+        graph_result = results.get('graph') or {}
+        retrieval = graph_result.get('retrieval') or {}
+        intent = retrieval.get('intent') or {}
+        facts = retrieval.get('facts') or []
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'Graph retrieval (Neo4j)',
+                'status': 'done' if graph_result.get('success') else 'error',
+                'detail': (
+                    f"intent={intent.get('intent_type') or '(unknown)'}\n"
+                    f"filters={json.dumps(intent.get('filters') or {}, default=str)}\n"
+                    f"facts={len(facts)}"
+                ),
+            }
+        )
+        next_id += 1
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'Graph Agent answer',
+                'status': 'done' if graph_result.get('success') else 'error',
+                'detail': graph_result.get('answer')
+                or graph_result.get('error')
+                or '(no graph answer)',
+                'model': model,
+            }
+        )
+        next_id += 1
+
+    if route == 'sql_and_graph':
+        synth = results.get('synthesis') or {}
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'Synthesize SQL + Graph',
+                'status': 'done' if synth.get('success') else 'error',
+                'detail': answer or synth.get('error') or '(empty synthesis)',
+                'model': model,
+            }
+        )
+        next_id += 1
+    elif route in {'sql', 'graph'}:
+        steps.append(
+            {
+                'id': next_id,
+                'title': 'Final answer',
+                'status': 'done' if result.get('success') else 'error',
+                'detail': answer or result.get('error') or '(empty)',
+                'model': model,
+            }
+        )
+
+    return steps
+
+
+def answer_query(query_text):
+    """
+    RetailAsk 2.0 entrypoint for /query:
+    Supervisor → SQL Agent and/or Graph Agent → optional synthesis.
+    """
+    logger.info('--- New supervised query --- | %s', query_text)
+    from agents.orchestrator import run_supervised_question
+
+    result = run_supervised_question(query_text)
+    route = (result.get('route') or 'general').strip().lower()
+    results = result.get('results') or {}
+    sql_result = results.get('sql') or {}
+    graph_result = results.get('graph') or {}
+    retrieval = graph_result.get('retrieval') or {}
+    model = _active_model_label()
+
+    payload = {
+        'answer': result.get('answer') or '',
+        'success': bool(result.get('success')),
+        'error': result.get('error'),
+        'route': route,
+        'routing': result.get('routing') or {},
+        'model': model,
+        'sql': sql_result.get('sql'),
+        'rows': (sql_result.get('rows') or [])[:50],
+        'schema_rag': sql_result.get('schema_context'),
+        'graph': {
+            'success': graph_result.get('success'),
+            'intent': retrieval.get('intent'),
+            'fact_count': len(retrieval.get('facts') or []),
+            'facts_preview': (retrieval.get('facts') or [])[:12],
+            'answer': graph_result.get('answer'),
+        }
+        if route in {'graph', 'sql_and_graph'}
+        else None,
+        'pipeline': _pipeline_from_orchestrator(query_text, result),
+    }
+    logger.info(
+        'Final supervised response | route=%s | success=%s | answer=%s',
+        route,
+        payload['success'],
+        (payload['answer'] or '')[:200],
     )
+    return payload
 
 
 def save_query(query_text, answer):

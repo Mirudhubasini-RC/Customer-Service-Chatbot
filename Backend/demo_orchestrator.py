@@ -3,7 +3,7 @@
 Demo for RetailAsk Supervisor + Agent Orchestration (Step 4D).
 
 Routes via Supervisor, then runs SQL and/or Graph agents.
-Does not wire /query.
+Same path as Flask /query (app.answer_query → run_supervised_question).
 """
 
 from __future__ import annotations
