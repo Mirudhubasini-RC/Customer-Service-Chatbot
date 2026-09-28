@@ -1,3 +1,7 @@
+# CPU-only PyTorch: without this, Linux installs pull multi-GB CUDA wheels that
+# are unusable on Render (no GPU, 512 MB RAM) and keep the service from starting.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 flask
 flask-cors
 requests
