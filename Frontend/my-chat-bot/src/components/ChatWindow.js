@@ -6,7 +6,9 @@ import {
   fetchSalesData,
   fetchQueriesData,
   fetchPracticeQuestions,
+  submitFeedback,
 } from '../components/apiService.js';
+import FeedbackPanel from './FeedbackPanel.js';
 
 const SendIcon = () => (
   <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -42,6 +44,127 @@ const ProductsIcon = () => (
     />
   </svg>
 );
+
+const ThumbIcon = ({ down }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="15"
+    height="15"
+    aria-hidden="true"
+    style={down ? { transform: 'rotate(180deg)' } : undefined}
+  >
+    <path
+      d="M7 11v9H4v-9h3zm2 9h8.2a2 2 0 0 0 2-1.6l1.3-6.4A2 2 0 0 0 18.5 9.6H14V5.5A2.5 2.5 0 0 0 11.5 3L9 11v9z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const MessageFeedback = ({ meta, feedback, onChange }) => {
+  const [comment, setComment] = useState('');
+  const [expected, setExpected] = useState('');
+  const status = feedback.status;
+
+  const send = async (rating, extra = {}) => {
+    onChange({ status: 'saving', rating });
+    try {
+      await submitFeedback({
+        question: meta.question,
+        answer: meta.answer,
+        route: meta.route,
+        sql: meta.sql,
+        rating,
+        ...extra,
+      });
+      onChange({ status: 'saved', rating });
+    } catch (error) {
+      onChange({
+        status: 'error',
+        rating,
+        error: (error && error.message) || 'Could not save feedback',
+      });
+    }
+  };
+
+  if (status === 'saved') {
+    return (
+      <div className="msg-feedback saved">
+        {feedback.rating === 'down'
+          ? 'Thanks. Your feedback was saved for review.'
+          : 'Thanks for the feedback!'}
+      </div>
+    );
+  }
+
+  if (status === 'form' || (status === 'saving' && feedback.rating === 'down')) {
+    return (
+      <div className="msg-feedback form">
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="What was wrong with this answer?"
+          rows={2}
+          disabled={status === 'saving'}
+        />
+        <textarea
+          value={expected}
+          onChange={(e) => setExpected(e.target.value)}
+          placeholder="What should the answer be? (optional)"
+          rows={2}
+          disabled={status === 'saving'}
+        />
+        <div className="msg-feedback-actions">
+          <button
+            type="button"
+            className="fb-submit"
+            onClick={() => send('down', { comment, expected_answer: expected })}
+            disabled={status === 'saving'}
+          >
+            {status === 'saving' ? 'Saving…' : 'Submit feedback'}
+          </button>
+          <button
+            type="button"
+            className="fb-cancel"
+            onClick={() => onChange({ status: 'idle' })}
+            disabled={status === 'saving'}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="msg-feedback">
+      <span>Was this helpful?</span>
+      <button
+        type="button"
+        className="thumb"
+        onClick={() => send('up')}
+        disabled={status === 'saving'}
+        aria-label="Like answer"
+        title="Like"
+      >
+        <ThumbIcon />
+      </button>
+      <button
+        type="button"
+        className="thumb"
+        onClick={() => onChange({ status: 'form', rating: 'down' })}
+        disabled={status === 'saving'}
+        aria-label="Dislike answer"
+        title="Dislike"
+      >
+        <ThumbIcon down />
+      </button>
+      {status === 'error' && <span className="msg-feedback-error">{feedback.error}</span>}
+    </div>
+  );
+};
 
 const DEFAULT_PRACTICE_QUESTIONS = [
   'How much revenue did we make?',
@@ -92,7 +215,14 @@ const ChatWindow = () => {
   );
   const [pipeline, setPipeline] = useState([]);
   const [pipelineMeta, setPipelineMeta] = useState(emptyPipelineMeta());
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const historyRef = useRef(null);
+
+  const updateMessageFeedback = (index, feedback) => {
+    setMessages((prev) =>
+      prev.map((msg, i) => (i === index ? { ...msg, feedback } : msg)),
+    );
+  };
 
   useEffect(() => {
     fetchPracticeQuestions()
@@ -154,7 +284,20 @@ const ChatWindow = () => {
         throw new Error(data.error);
       }
       const botMessage = formatBotHtml(data.answer || 'No response from agent');
-      setMessages([...updatedMessages, { text: botMessage, type: 'bot' }]);
+      setMessages([
+        ...updatedMessages,
+        {
+          text: botMessage,
+          type: 'bot',
+          meta: {
+            question: trimmed,
+            answer: data.answer || '',
+            route: data.route || '',
+            sql: data.sql || null,
+          },
+          feedback: { status: 'idle' },
+        },
+      ]);
       setPipeline(data.pipeline || []);
       setPipelineMeta({
         model: data.model || '',
@@ -291,9 +434,18 @@ const ChatWindow = () => {
                 Supervisor · SQL Agent · Graph-RAG Agent
               </p>
             </div>
-            <span className={`status-dot ${loading ? 'busy' : 'online'}`}>
-              {loading ? 'Routing…' : 'Online'}
-            </span>
+            <div className="toolbar-actions">
+              <button
+                type="button"
+                className="feedback-open"
+                onClick={() => setFeedbackOpen(true)}
+              >
+                Feedback &amp; Eval
+              </button>
+              <span className={`status-dot ${loading ? 'busy' : 'online'}`}>
+                {loading ? 'Routing…' : 'Online'}
+              </span>
+            </div>
           </div>
 
           <div className="chat-history" ref={historyRef}>
@@ -323,13 +475,27 @@ const ChatWindow = () => {
               </div>
             )}
 
-            {messages.map((msg, index) => (
-              <div
-                key={`${msg.type}-${index}`}
-                className={`message ${msg.type}`}
-                dangerouslySetInnerHTML={{ __html: msg.text }}
-              />
-            ))}
+            {messages.map((msg, index) =>
+              msg.meta ? (
+                <div key={`${msg.type}-${index}`} className="bot-turn">
+                  <div
+                    className={`message ${msg.type}`}
+                    dangerouslySetInnerHTML={{ __html: msg.text }}
+                  />
+                  <MessageFeedback
+                    meta={msg.meta}
+                    feedback={msg.feedback || { status: 'idle' }}
+                    onChange={(feedback) => updateMessageFeedback(index, feedback)}
+                  />
+                </div>
+              ) : (
+                <div
+                  key={`${msg.type}-${index}`}
+                  className={`message ${msg.type}`}
+                  dangerouslySetInnerHTML={{ __html: msg.text }}
+                />
+              ),
+            )}
 
             {loading && (
               <div className="message bot typing">
@@ -486,6 +652,14 @@ const ChatWindow = () => {
           </div>
         </aside>
       </div>
+      <FeedbackPanel
+        open={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+        onAsk={(question) => {
+          setFeedbackOpen(false);
+          askAgent(question);
+        }}
+      />
     </div>
   );
 };

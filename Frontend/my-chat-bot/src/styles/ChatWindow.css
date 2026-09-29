@@ -430,6 +430,127 @@
   box-shadow: 0 8px 20px rgba(31, 22, 53, 0.06);
 }
 
+.bot-turn {
+  max-width: 78%;
+  margin-right: auto;
+  margin-bottom: 12px;
+}
+
+.bot-turn .message {
+  max-width: 100%;
+  margin-bottom: 6px;
+}
+
+.msg-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.msg-feedback .thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.msg-feedback .thumb:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.msg-feedback .thumb:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.msg-feedback.saved {
+  color: #047857;
+  font-weight: 600;
+}
+
+.msg-feedback.form {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.msg-feedback.form textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.msg-feedback-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.msg-feedback-actions button {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fb-submit {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.fb-cancel {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--muted);
+}
+
+.msg-feedback-error {
+  color: #b91c1c;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feedback-open {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.feedback-open:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
 .message.typing {
   display: inline-flex;
   align-items: center;

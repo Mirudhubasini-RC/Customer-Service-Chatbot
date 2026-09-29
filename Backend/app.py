@@ -5,6 +5,7 @@ import os
 import re
 import json
 import logging
+import time
 import requests
 from decimal import Decimal
 from datetime import date, datetime
@@ -187,6 +188,17 @@ def get_db_connection():
     return mysql.connector.connect(**db_config)
 
 
+LLM_RATE_LIMIT_RETRIES = int(os.getenv('LLM_RATE_LIMIT_RETRIES', '3'))
+
+
+def _retry_after_seconds(response, attempt):
+    try:
+        wait = float(response.headers.get('retry-after', ''))
+    except ValueError:
+        wait = 2.0 * (2 ** attempt)
+    return min(max(wait, 1.0), 30.0)
+
+
 def call_llm(messages, max_tokens=220, temperature=0.2):
     endpoint = _llm_endpoint()
     logger.info(
@@ -194,17 +206,23 @@ def call_llm(messages, max_tokens=220, temperature=0.2):
         endpoint['provider'],
         endpoint['model'],
     )
-    response = requests.post(
-        endpoint['url'],
-        headers=endpoint['headers'],
-        json={
-            'model': endpoint['model'],
-            'messages': messages,
-            'max_tokens': max_tokens,
-            'temperature': temperature,
-        },
-        timeout=180,
-    )
+    for attempt in range(LLM_RATE_LIMIT_RETRIES + 1):
+        response = requests.post(
+            endpoint['url'],
+            headers=endpoint['headers'],
+            json={
+                'model': endpoint['model'],
+                'messages': messages,
+                'max_tokens': max_tokens,
+                'temperature': temperature,
+            },
+            timeout=180,
+        )
+        if response.status_code != 429 or attempt == LLM_RATE_LIMIT_RETRIES:
+            break
+        wait = _retry_after_seconds(response, attempt)
+        logger.warning('LLM rate limited (429); retrying in %.1fs', wait)
+        time.sleep(wait)
     response.raise_for_status()
     api_response = response.json()
 
@@ -780,6 +798,88 @@ def query():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': str(e)}), 500
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/feedback', methods=['POST'])
+def create_feedback():
+    import feedback_store
+
+    data = request.get_json() or {}
+    try:
+        feedback_id = feedback_store.add_feedback(data)
+        return jsonify({'id': feedback_id}), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Saving feedback failed')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/feedback', methods=['GET'])
+def get_feedback():
+    import feedback_store
+
+    try:
+        return jsonify(feedback_store.list_feedback(request.args.get('rating')))
+    except Exception as e:
+        logger.exception('Listing feedback failed')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/feedback/<int:feedback_id>', methods=['PATCH'])
+def update_feedback(feedback_id):
+    import feedback_store
+
+    try:
+        item = feedback_store.review_feedback(feedback_id, request.get_json() or {})
+        if item is None:
+            return jsonify({'error': 'Feedback not found'}), 404
+        return jsonify(item)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Updating feedback failed')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/eval/dataset', methods=['GET'])
+def get_eval_dataset():
+    import feedback_store
+    from evaluation.scoring import load_dataset
+
+    cases = load_dataset()
+    feedback_error = None
+    try:
+        cases += feedback_store.feedback_eval_cases()
+    except Exception as e:
+        feedback_error = str(e)
+    return jsonify({'cases': cases, 'feedback_error': feedback_error})
+
+
+@app.route('/eval/results', methods=['GET'])
+def get_eval_results():
+    from evaluation.scoring import load_latest_results
+
+    report = load_latest_results()
+    if report is None:
+        return jsonify({'available': False})
+    return jsonify({'available': True, **report})
+
+
+@app.route('/eval/run', methods=['POST'])
+def run_eval_routing():
+    """Routing-only eval (one LLM call per case) so it fits in one HTTP request.
+    The full answer-level eval runs from the CLI: python -m evaluation.run_eval"""
+    from evaluation.run_eval import collect_cases, run_eval, save_results
+
+    try:
+        cases = collect_cases(include_feedback=True)
+        report = run_eval(cases, routing_only=True)
+        save_results(report)
+        return jsonify({'available': True, **report})
+    except Exception as e:
+        logger.exception('Routing eval failed')
         return jsonify({'error': str(e)}), 500
 
 

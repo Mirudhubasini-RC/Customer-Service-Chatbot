@@ -52,8 +52,10 @@ It's built for business analytics, not end-customer support.
 | Orchestrator | `Backend/agents/orchestrator.py` | Runs the chosen agent(s); for `sql_and_graph` it passes both outputs to a synthesis LLM call. |
 | Schema RAG | `Backend/schema_rag.py`, `Backend/schema_kb/` | Embeds table docs, retrieves the tables relevant to a question, adds foreign-key neighbours. |
 | Business graph | `Backend/business_graph/` | Builds the Neo4j graph from MySQL; retrieval, intents, and graph answering. |
-| API | `Backend/app.py` | Flask: `/query` (the agent pipeline), `/sales`, `/products`, `/practice-questions`. |
-| UI | `Frontend/my-chat-bot/` | Chat plus an Agent Pipeline panel showing route, steps, SQL, and graph facts. |
+| API | `Backend/app.py` | Flask: `/query` (the agent pipeline), `/sales`, `/products`, `/practice-questions`, `/feedback`, `/eval/*`. |
+| Evaluation | `Backend/evaluation/` | Labelled eval dataset, scoring, and a runner that tests routing, answers, and safety. |
+| Feedback | `Backend/feedback_store.py` | Stores thumbs up/down on answers in MySQL; reviewed dislikes become eval cases. |
+| UI | `Frontend/my-chat-bot/` | Chat with like/dislike on every answer, an Agent Pipeline panel, and a Feedback & Eval view. |
 
 ---
 
@@ -125,6 +127,52 @@ The UI's side panel shows the route, the Supervisor's reason, the generated SQL 
 
 ---
 
+## Evaluation and continual feedback
+
+```
+User asks → answer → 👍 / 👎 (+ "what was wrong?")        stored in MySQL: answer_feedback
+                         │
+                         ▼
+   Feedback & Eval view: reviewer sets the correct route and
+   keywords the answer must mention → "Add to eval set"
+                         │
+                         ▼
+   Eval runner re-tests the 25 labelled cases + promoted feedback
+   → pass rate, route accuracy, answer accuracy (shown in the app)
+```
+
+**Eval dataset** (`Backend/evaluation/eval_dataset.json`): 25 labelled questions covering SQL metrics, the high/highest rules, graph relationships, SQL + Graph questions, general questions, and write attempts that must be refused. Each case has the acceptable route(s), keywords the answer must mention (ground truth from `seed.sql`), and a note describing the correct answer.
+
+Each case is scored on:
+- **route**: the Supervisor picked one of the expected routes
+- **success** / **refused**: the pipeline succeeded, or for safety cases no SQL was executed
+- **answer**: every expected keyword appears in the answer (`64,186.66` matches `64186.66`)
+
+```bash
+cd Backend
+python -m evaluation.run_eval                    # full pipeline (about 5 min on Groq's free tier)
+python -m evaluation.run_eval --routing-only     # Supervisor routing only (about 20 s)
+python -m evaluation.run_eval --include-feedback # also run questions promoted from user feedback
+python -m evaluation.run_eval --ids sql-01 graph-01
+```
+
+Results are saved to `Backend/evaluation/results/latest.json` and shown in the app. The **Run routing eval** button in the app runs the routing-only mode.
+
+Latest full run (Groq `qwen/qwen3.8-27b`): **22/25 passed, route accuracy 100%, answer accuracy 92%.** The three failures are real gaps:
+- *"Which products have battery complaints?"*: there is no graph intent for filtering by a single issue type.
+- *"What is our total revenue and which products have quality issues?"*: synthesis reported revenue for quality-issue products instead of total revenue.
+- *"How many units did products with returns sell…?"*: the SQL answer is right, but the graph side has no matching intent, so the result is partial.
+
+**Feedback in the app:** every agent answer has 👍 / 👎 buttons. A dislike asks what was wrong and, optionally, what the answer should be. The **Feedback & Eval** button opens a view with:
+- **User feedback**: filter all / disliked / liked / in eval set. **View answer** shows the stored answer and SQL. **Ask again** re-runs the question. For dislikes, you can set the correct route and required keywords, then **Add to eval set**.
+- **Eval dataset**: every case with its expected route, the last result (pass/fail and actual route), details (correct answer, Supervisor reason, last answer), and an **Ask** button.
+
+The `answer_feedback` table is created automatically on first use (or run `Backend/migrations/002_answer_feedback.sql`).
+
+Rate limits: `call_llm` retries HTTP 429 responses up to `LLM_RATE_LIMIT_RETRIES` times (default 3), honouring `Retry-After`.
+
+---
+
 ## Local development
 
 ```bash
@@ -189,10 +237,11 @@ Run from `Backend/` with the virtualenv active. LLM, MySQL, and Neo4j are mocked
 python -m unittest \
   tests.test_supervisor tests.test_sql_agent tests.test_graph_agent tests.test_orchestrator \
   tests.test_sql_generation_guidance tests.test_schema_rag_device tests.test_is_safe_select \
-  tests.test_graph_retrieval tests.test_graph_rag -v
+  tests.test_graph_retrieval tests.test_graph_rag \
+  tests.test_evaluation tests.test_feedback tests.test_llm_retry -v
 ```
 
-That's 86 tests covering routing and fallbacks, SQL safety, the high/highest and quality-issue rules, graph intents, agent failure handling, and synthesis.
+That's 113 tests covering routing and fallbacks, SQL safety, the high/highest and quality-issue rules, graph intents, agent failure handling, synthesis, eval scoring, the feedback store and endpoints, and LLM rate-limit retries.
 
 Business-graph tests: `python -m unittest tests.test_business_graph -v` (in-memory) and `tests.test_business_graph_neo4j` (skipped unless Neo4j variables are set).
 
@@ -226,4 +275,5 @@ The backend is a Render **Web Service** and the frontend a **Static Site**. MySQ
 - **The General route is a placeholder.** It returns a fixed message and does not answer conceptual questions.
 - **Routing is LLM-based, so it isn't perfectly consistent.** For example, "high sales and quality issues" is sometimes routed to `sql_and_graph` instead of `graph`. The answer is still correct, but the path differs.
 - **Graph coverage is limited to the supported intents.** Relationship questions outside them get an "insufficient data" answer.
-- **No evaluation dataset or feedback loop yet.** Answer quality is checked by unit tests and manual runs of the demo questions.
+- **The eval set is small and keyword-based.** 25 cases plus promoted feedback. Answers are checked for required keywords, not judged for full correctness; an LLM-as-judge or exact-result comparison would be the next step.
+- **Feedback has no login.** Anyone using the app can rate answers and edit eval cases.

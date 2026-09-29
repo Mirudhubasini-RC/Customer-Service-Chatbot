@@ -64,6 +64,37 @@ export const fetchQueriesData = async () => {
   }
 };
 
+const requestJson = async (path, options = {}) => {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP error! Status: ${response.status}`);
+  }
+  return data;
+};
+
+export const submitFeedback = (feedback) =>
+  requestJson('/feedback', { method: 'POST', body: JSON.stringify(feedback) });
+
+export const fetchFeedback = (rating = 'all') =>
+  requestJson(`/feedback?rating=${encodeURIComponent(rating)}`);
+
+export const reviewFeedback = (id, review) =>
+  requestJson(`/feedback/${id}`, { method: 'PATCH', body: JSON.stringify(review) });
+
+export const fetchEvalDataset = () => requestJson('/eval/dataset');
+
+export const fetchEvalResults = () => requestJson('/eval/results');
+
+export const runRoutingEval = () => requestJson('/eval/run', { method: 'POST' });
+
 export const fetchPracticeQuestions = async () => {
   try {
     const response = await fetch(`${BASE_URL}/practice-questions`, {
