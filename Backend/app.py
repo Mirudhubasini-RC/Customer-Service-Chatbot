@@ -689,9 +689,9 @@ def answer_query(query_text):
     Supervisor → SQL Agent and/or Graph Agent → optional synthesis.
     """
     logger.info('--- New supervised query --- | %s', query_text)
-    from agents.orchestrator import run_supervised_question
+    from agents.orchestrator import active_orchestrator, run_question
 
-    result = run_supervised_question(query_text)
+    result = run_question(query_text)
     route = (result.get('route') or 'general').strip().lower()
     results = result.get('results') or {}
     sql_result = results.get('sql') or {}
@@ -706,6 +706,7 @@ def answer_query(query_text):
         'route': route,
         'routing': result.get('routing') or {},
         'model': model,
+        'orchestrator': active_orchestrator(),
         'sql': sql_result.get('sql'),
         'rows': (sql_result.get('rows') or [])[:50],
         'schema_rag': sql_result.get('schema_context'),

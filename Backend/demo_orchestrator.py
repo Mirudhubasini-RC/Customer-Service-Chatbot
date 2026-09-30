@@ -3,7 +3,9 @@
 Demo for RetailAsk Supervisor + Agent Orchestration (Step 4D).
 
 Routes via Supervisor, then runs SQL and/or Graph agents.
-Same path as Flask /query (app.answer_query → run_supervised_question).
+Same path as Flask /query (app.answer_query → run_question → LangGraph by default).
+
+    python demo_orchestrator.py --mermaid   # print the LangGraph workflow diagram
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from dotenv import load_dotenv
 
 load_dotenv(BACKEND_DIR / '.env', override=True)
 
-from agents.orchestrator import run_supervised_question
+from agents.orchestrator import active_orchestrator, run_question
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,8 +70,16 @@ def _summarize_results(route: str, results: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description='RetailAsk orchestrator demo')
     parser.add_argument('--question', type=str, default=None)
+    parser.add_argument('--mermaid', action='store_true', help='Print the LangGraph diagram and exit.')
     args = parser.parse_args()
 
+    if args.mermaid:
+        from agents.langgraph_orchestrator import retailask_graph_mermaid
+
+        print(retailask_graph_mermaid())
+        return 0
+
+    print(f'Orchestrator: {active_orchestrator()}')
     items = [('Custom', args.question)] if args.question else DEMO_QUESTIONS
 
     for label, question in items:
@@ -77,7 +87,7 @@ def main() -> int:
         print(f'Expected category: {label}')
         print(f'Question: {question}\n')
 
-        result = run_supervised_question(question)
+        result = run_question(question)
 
         print(f"→ Supervisor route: {result.get('route')}")
         routing = result.get('routing') or {}

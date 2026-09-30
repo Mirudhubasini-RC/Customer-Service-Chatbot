@@ -184,7 +184,13 @@ const ROUTE_LABELS = {
   general: 'General',
 };
 
+const ORCHESTRATOR_LABELS = {
+  langgraph: 'LangGraph',
+  python: 'Python',
+};
+
 const emptyPipelineMeta = () => ({
+  orchestrator: '',
   model: '',
   route: '',
   sql: null,
@@ -300,6 +306,7 @@ const ChatWindow = () => {
       ]);
       setPipeline(data.pipeline || []);
       setPipelineMeta({
+        orchestrator: data.orchestrator || '',
         model: data.model || '',
         route: data.route || '',
         sql: data.sql || null,
@@ -431,7 +438,7 @@ const ChatWindow = () => {
             <div>
               <p className="chat-title">RetailAsk</p>
               <p className="chat-subtitle">
-                Supervisor · SQL Agent · Graph-RAG Agent
+                LangGraph · Supervisor · SQL Agent · Graph-RAG Agent
               </p>
             </div>
             <div className="toolbar-actions">
@@ -565,6 +572,15 @@ const ChatWindow = () => {
                   <span className={`route-pill route-${pipelineMeta.route}`}>
                     {routeLabel || pipelineMeta.route}
                   </span>
+                )}
+                {pipelineMeta.orchestrator && (
+                  <div className="pipeline-model">
+                    Orchestrator:{' '}
+                    <code>
+                      {ORCHESTRATOR_LABELS[pipelineMeta.orchestrator] ||
+                        pipelineMeta.orchestrator}
+                    </code>
+                  </div>
                 )}
                 {pipelineMeta.model && (
                   <div className="pipeline-model">

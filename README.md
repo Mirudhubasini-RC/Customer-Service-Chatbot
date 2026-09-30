@@ -10,7 +10,7 @@ A **Supervisor agent** decides what kind of question it is and routes it to a sp
 
 It's built for business analytics, not end-customer support.
 
-**Stack:** React · Flask · MySQL (Aiven) · Neo4j (Aura) · sentence-transformers (MiniLM) · any OpenAI-compatible LLM (Groq by default; Ollama or Hugging Face optional)
+**Stack:** React · Flask · **LangGraph** (agent orchestration) · MySQL (Aiven) · Neo4j (Aura) · sentence-transformers (MiniLM) · any OpenAI-compatible LLM (Groq by default; Ollama or Hugging Face optional)
 
 ---
 
@@ -49,7 +49,8 @@ It's built for business analytics, not end-customer support.
 | Supervisor | `Backend/agents/supervisor.py` | One LLM call that returns `{"route", "reason"}`. Invalid output falls back to `general`. |
 | SQL Agent | `Backend/agents/sql_agent.py` | Schema RAG → LLM writes one MySQL `SELECT` → safety check → run → LLM explains the rows. |
 | Graph Agent | `Backend/agents/graph_agent.py` | Deterministic intent parser → parameterized Cypher on Neo4j → LLM answers **only** from the retrieved facts. |
-| Orchestrator | `Backend/agents/orchestrator.py` | Runs the chosen agent(s); for `sql_and_graph` it passes both outputs to a synthesis LLM call. |
+| Orchestrator (LangGraph) | `Backend/agents/langgraph_orchestrator.py` | The workflow as a LangGraph `StateGraph`: Supervisor node → conditional edge per route; for `sql_and_graph` the SQL and Graph agents run **in parallel** and join into a synthesis node. Default engine. |
+| Orchestrator (shared + fallback) | `Backend/agents/orchestrator.py` | Shared routing/synthesis helpers, `run_question()` entry point, and a plain-Python engine (`ORCHESTRATOR=python`) with identical behaviour. |
 | Schema RAG | `Backend/schema_rag.py`, `Backend/schema_kb/` | Embeds table docs, retrieves the tables relevant to a question, adds foreign-key neighbours. |
 | Business graph | `Backend/business_graph/` | Builds the Neo4j graph from MySQL; retrieval, intents, and graph answering. |
 | API | `Backend/app.py` | Flask: `/query` (the agent pipeline), `/sales`, `/products`, `/practice-questions`, `/feedback`, `/eval/*`. |
@@ -64,6 +65,26 @@ It's built for business analytics, not end-customer support.
 **Two data stores, each for what it's good at.** Metrics (totals, averages, rankings, date ranges) are natural in SQL. Relationship questions (*product → feedback → issue*, *brand → product → negative feedback*) are multi-hop joins in SQL but single traversals in a graph. Instead of forcing one store to do both, each question goes to the store that fits it.
 
 **A Supervisor instead of one giant prompt.** One routing call keeps each downstream prompt small and specialized. The route and its reason are returned to the UI, so every answer shows which path produced it.
+
+**LangGraph for orchestration.** The multi-agent workflow is an explicit LangGraph graph, so the routes are visible as edges rather than buried in if/else code. It also gives parallel execution for free: on `sql_and_graph` questions the SQL and Graph agents run concurrently and LangGraph waits for both before synthesis. The orchestration was first written in plain Python to understand each step, then moved to LangGraph; the plain version is kept as a fallback (`ORCHESTRATOR=python`), and the same 13 orchestrator tests pass on both engines.
+
+```mermaid
+graph TD;
+	__start__([start]) --> supervisor;
+	supervisor -.->|general| general_agent;
+	supervisor -.->|sql| sql_agent;
+	supervisor -.->|graph| graph_agent;
+	supervisor -.->|sql_and_graph| sql_agent_for_synthesis;
+	supervisor -.->|sql_and_graph| graph_agent_for_synthesis;
+	sql_agent_for_synthesis --> synthesize;
+	graph_agent_for_synthesis --> synthesize;
+	general_agent --> __end__([end]);
+	sql_agent --> __end__;
+	graph_agent --> __end__;
+	synthesize --> __end__;
+```
+
+Regenerate from the compiled graph with `python demo_orchestrator.py --mermaid`.
 
 **Deterministic where an LLM isn't needed.** The LLM handles things that need language: routing, writing SQL, and phrasing answers. Everything that must be correct and repeatable is plain code:
 - **Graph intent parsing** is rule-based, and the Cypher queries are fixed and parameterized. The LLM never writes Cypher.
@@ -158,7 +179,7 @@ python -m evaluation.run_eval --ids sql-01 graph-01
 
 Results are saved to `Backend/evaluation/results/latest.json` and shown in the app. The **Run routing eval** button in the app runs the routing-only mode.
 
-Latest full run (Groq `qwen/qwen3.8-27b`): **22/25 passed, route accuracy 100%, answer accuracy 92%.** The three failures are real gaps:
+Latest full run (LangGraph engine, Groq `qwen/qwen3.8-27b`): **22/25 passed, route accuracy 100%, answer accuracy 92%**, identical to the plain-Python engine. The three failures are real gaps:
 - *"Which products have battery complaints?"*: there is no graph intent for filtering by a single issue type.
 - *"What is our total revenue and which products have quality issues?"*: synthesis reported revenue for quality-issue products instead of total revenue.
 - *"How many units did products with returns sell…?"*: the SQL answer is right, but the graph side has no matching intent, so the result is partial.
@@ -197,6 +218,7 @@ The frontend calls `http://localhost:8000` unless `REACT_APP_API_URL` is set.
 | Key | Purpose |
 |---|---|
 | `LLM_PROVIDER` | `groq` (recommended), `ollama`, or `huggingface` |
+| `ORCHESTRATOR` | `langgraph` (default) or `python` (plain-Python fallback engine) |
 | `GROQ_API_KEY`, `GROQ_MODEL` | Groq key ([console.groq.com/keys](https://console.groq.com/keys)) and a model your account has access to |
 | `OLLAMA_API_URL`, `OLLAMA_MODEL` | Local Ollama instead of Groq |
 | `HUGGINGFACE_API_KEY`, `HF_MODEL` | Hugging Face Inference Router instead of Groq |
@@ -238,10 +260,10 @@ python -m unittest \
   tests.test_supervisor tests.test_sql_agent tests.test_graph_agent tests.test_orchestrator \
   tests.test_sql_generation_guidance tests.test_schema_rag_device tests.test_is_safe_select \
   tests.test_graph_retrieval tests.test_graph_rag \
-  tests.test_evaluation tests.test_feedback tests.test_llm_retry -v
+  tests.test_evaluation tests.test_feedback tests.test_llm_retry tests.test_langgraph_orchestrator -v
 ```
 
-That's 113 tests covering routing and fallbacks, SQL safety, the high/highest and quality-issue rules, graph intents, agent failure handling, synthesis, eval scoring, the feedback store and endpoints, and LLM rate-limit retries.
+That's 133 tests covering routing and fallbacks, SQL safety, the high/highest and quality-issue rules, graph intents, agent failure handling, synthesis, eval scoring, the feedback store and endpoints, LLM rate-limit retries, and the LangGraph engine (the full orchestrator suite re-run on LangGraph, plus a test proving the SQL and Graph agents run in parallel).
 
 Business-graph tests: `python -m unittest tests.test_business_graph -v` (in-memory) and `tests.test_business_graph_neo4j` (skipped unless Neo4j variables are set).
 

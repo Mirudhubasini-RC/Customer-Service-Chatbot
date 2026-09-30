@@ -2,13 +2,16 @@
 Supervisor + Agent Orchestration (Step 4D).
 
 Routes via the Supervisor, then executes SQL Agent / Graph Agent as needed.
-Wired to Flask /query via app.answer_query. No A2A yet.
+run_question() is the entry point: it runs the LangGraph version
+(langgraph_orchestrator.py) by default, or this plain-Python version when
+ORCHESTRATOR=python. Both share the helpers below.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Callable
 
 logger = logging.getLogger('retail-agent')
@@ -168,16 +171,65 @@ def run_supervised_question(
     """
     q = (question or '').strip()
     if not q:
-        return {
-            'question': '',
-            'route': 'general',
-            'routing': {'route': 'general', 'reason': 'Empty question.', 'question': ''},
-            'results': {'general': {'handled': False, 'reason': 'empty_question'}},
-            'answer': 'Please ask a retail analytics question.',
-            'success': False,
-            'error': 'empty_question',
-        }
+        return empty_question_result()
 
+    route_fn, sql_agent_fn, graph_agent_fn, synthesize_fn = resolve_dependencies(
+        route_fn, sql_agent_fn, graph_agent_fn, synthesize_fn
+    )
+
+    routing, route = resolve_routing(q, route_fn)
+
+    # --- general ---
+    if route == 'general':
+        return general_result(q, routing)
+
+    # --- sql only ---
+    if route == 'sql':
+        sql_result = _safe_run_agent('sql', sql_agent_fn, q)
+        return single_agent_result(q, routing, 'sql', sql_result)
+
+    # --- graph only ---
+    if route == 'graph':
+        graph_result = _safe_run_agent('graph', graph_agent_fn, q)
+        return single_agent_result(q, routing, 'graph', graph_result)
+
+    # --- sql_and_graph ---
+    # Skip SQL explain_rows LLM; synthesis uses raw rows (+ graph answer).
+    sql_result = _safe_run_agent('sql', sql_agent_fn, q, explain_rows=False)
+    graph_result = _safe_run_agent('graph', graph_agent_fn, q)
+    return sql_and_graph_result(
+        q, routing, sql_result, graph_result, synthesize_fn, llm_call=llm_call
+    )
+
+
+def active_orchestrator() -> str:
+    """`langgraph` (default) or `python`, from the ORCHESTRATOR env var."""
+    choice = (os.getenv('ORCHESTRATOR') or 'langgraph').strip().lower()
+    if choice != 'langgraph':
+        return 'python'
+    try:
+        import langgraph  # noqa: F401
+    except ImportError:
+        logger.warning('ORCHESTRATOR=langgraph but langgraph is not installed; using python')
+        return 'python'
+    return 'langgraph'
+
+
+def run_question(question: str) -> dict[str, Any]:
+    """Entry point for /query and the eval runner; picks the orchestration engine."""
+    if active_orchestrator() == 'langgraph':
+        from .langgraph_orchestrator import run_langgraph_question
+
+        return run_langgraph_question(question)
+    return run_supervised_question(question)
+
+
+def resolve_dependencies(
+    route_fn: RouteFn | None,
+    sql_agent_fn: SqlAgentFn | None,
+    graph_agent_fn: GraphAgentFn | None,
+    synthesize_fn: Callable[..., str] | None,
+):
     if route_fn is None:
         from .supervisor import route_question
 
@@ -192,7 +244,11 @@ def run_supervised_question(
         graph_agent_fn = run_graph_agent
     if synthesize_fn is None:
         synthesize_fn = synthesize_sql_and_graph_answer
+    return route_fn, sql_agent_fn, graph_agent_fn, synthesize_fn
 
+
+def resolve_routing(q: str, route_fn: RouteFn) -> tuple[dict[str, Any], str]:
+    """Call the Supervisor; any failure or invalid output falls back to `general`."""
     try:
         routing = route_fn(q)
     except Exception as exc:
@@ -221,55 +277,66 @@ def run_supervised_question(
         route = 'general'
 
     logger.info('Orchestrator route | %s | reason=%s', route, routing.get('reason'))
+    return routing, route
 
-    # --- general ---
-    if route == 'general':
-        return {
-            'question': q,
-            'route': 'general',
-            'routing': routing,
-            'results': {
-                'general': {
-                    'handled': False,
-                    'reason': 'general_agent_not_implemented',
-                    'message': GENERAL_ANSWER,
-                }
-            },
-            'answer': GENERAL_ANSWER,
-            'success': True,
-            'error': None,
-        }
 
-    # --- sql only ---
-    if route == 'sql':
-        sql_result = _safe_run_agent('sql', sql_agent_fn, q)
-        return {
-            'question': q,
-            'route': 'sql',
-            'routing': routing,
-            'results': {'sql': sql_result},
-            'answer': sql_result.get('answer') or '',
-            'success': bool(sql_result.get('success')),
-            'error': sql_result.get('error'),
-        }
+def empty_question_result() -> dict[str, Any]:
+    return {
+        'question': '',
+        'route': 'general',
+        'routing': {'route': 'general', 'reason': 'Empty question.', 'question': ''},
+        'results': {'general': {'handled': False, 'reason': 'empty_question'}},
+        'answer': 'Please ask a retail analytics question.',
+        'success': False,
+        'error': 'empty_question',
+    }
 
-    # --- graph only ---
-    if route == 'graph':
-        graph_result = _safe_run_agent('graph', graph_agent_fn, q)
-        return {
-            'question': q,
-            'route': 'graph',
-            'routing': routing,
-            'results': {'graph': graph_result},
-            'answer': graph_result.get('answer') or '',
-            'success': bool(graph_result.get('success')),
-            'error': graph_result.get('error'),
-        }
 
-    # --- sql_and_graph ---
-    # Skip SQL explain_rows LLM; synthesis uses raw rows (+ graph answer).
-    sql_result = _safe_run_agent('sql', sql_agent_fn, q, explain_rows=False)
-    graph_result = _safe_run_agent('graph', graph_agent_fn, q)
+def single_agent_result(
+    q: str,
+    routing: dict[str, Any],
+    route: str,
+    agent_result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        'question': q,
+        'route': route,
+        'routing': routing,
+        'results': {route: agent_result},
+        'answer': agent_result.get('answer') or '',
+        'success': bool(agent_result.get('success')),
+        'error': agent_result.get('error'),
+    }
+
+
+def general_result(q: str, routing: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'question': q,
+        'route': 'general',
+        'routing': routing,
+        'results': {
+            'general': {
+                'handled': False,
+                'reason': 'general_agent_not_implemented',
+                'message': GENERAL_ANSWER,
+            }
+        },
+        'answer': GENERAL_ANSWER,
+        'success': True,
+        'error': None,
+    }
+
+
+def sql_and_graph_result(
+    q: str,
+    routing: dict[str, Any],
+    sql_result: dict[str, Any],
+    graph_result: dict[str, Any],
+    synthesize_fn: Callable[..., str],
+    *,
+    llm_call: LLMCall | None = None,
+) -> dict[str, Any]:
+    """Merge both agent results with the synthesis LLM, falling back to a partial answer."""
     sql_ok = bool(sql_result.get('success'))
     graph_ok = bool(graph_result.get('success'))
 

@@ -67,7 +67,7 @@ def run_eval(
         if routing_only:
             from agents.supervisor import route_question as pipeline_fn
         else:
-            from agents.orchestrator import run_supervised_question as pipeline_fn
+            from agents.orchestrator import run_question as pipeline_fn
 
     started = time.time()
     scored = []
@@ -91,6 +91,7 @@ def run_eval(
         'mode': 'routing_only' if routing_only else 'full',
         'duration_seconds': round(time.time() - started, 1),
         'model': _active_model_label(),
+        'orchestrator': 'n/a (supervisor only)' if routing_only else _active_orchestrator(),
         'summary': summarize(scored),
         'cases': scored,
     }
@@ -103,6 +104,12 @@ def _active_model_label() -> str:
         return label()
     except Exception:
         return 'unknown'
+
+
+def _active_orchestrator() -> str:
+    from agents.orchestrator import active_orchestrator
+
+    return active_orchestrator()
 
 
 def save_results(report: dict[str, Any]) -> None:

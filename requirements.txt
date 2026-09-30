@@ -11,3 +11,4 @@ gunicorn
 sentence-transformers
 numpy
 neo4j
+langgraph
