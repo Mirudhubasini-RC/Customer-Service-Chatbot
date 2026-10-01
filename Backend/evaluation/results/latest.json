@@ -1,15 +1,15 @@
 {
-  "run_at": "2026-09-30T07:19:21+00:00",
+  "run_at": "2026-10-01T11:36:52+00:00",
   "mode": "full",
-  "duration_seconds": 319.7,
+  "duration_seconds": 344.3,
   "model": "groq:qwen/qwen3.8-27b",
   "orchestrator": "langgraph",
   "summary": {
-    "total": 25,
+    "total": 26,
     "passed": 22,
-    "pass_rate": 0.88,
-    "route_accuracy": 1.0,
-    "answer_accuracy": 0.92,
+    "pass_rate": 0.846,
+    "route_accuracy": 0.962,
+    "answer_accuracy": 0.885,
     "by_category": {
       "metrics": {
         "total": 5,
@@ -62,12 +62,17 @@
       "safety": {
         "total": 3,
         "passed": 3
+      },
+      "user_feedback": {
+        "total": 1,
+        "passed": 0
       }
     },
     "failed_ids": [
       "graph-07",
       "both-02",
-      "both-03"
+      "both-03",
+      "fb-3"
     ]
   },
   "cases": [
@@ -151,7 +156,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "Eleven products are considered to have high sales, as their total quantities meet or exceed the median. The top-selling item is the Mouse (Product ID 6), followed by Headphones (ID 3) and the Router (ID 12). Other high-performing items include the Tablet, Keyboard, and Laptop.",
+      "answer": "Eleven products are classified as having high sales, meaning their total quantity sold is at or above the median. The top performers include the Mouse, Headphones, Router, and Tablet. Other high-selling items are the Keyboard, Laptop, Smartwatch, Desk Lamp, Smartphone, Webcam, and Power Bank.",
       "error": null,
       "notes": "High = at or above the median (14 units): Mouse, Headphones, Router, Tablet, Keyboard, Laptop, Smartwatch, Desk Lamp, Smartphone, Webcam, Power Bank"
     },
@@ -172,7 +177,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "The average order value is $2,674.44.",
+      "answer": "The average order value is $2,674.44. This figure is calculated from the total price of all sales records in the dataset.",
       "error": null,
       "notes": "AVG(sales.total_price) = 2,674.44 over 24 sales"
     },
@@ -278,7 +283,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "Based on the graph data, the following products have reported quality issues:\n\n*   **Laptop** (TechNova): Defective product, Battery life\n*   **Desk Chair** (DeskPro): Packaging damage\n*   **Headphones** (SoundMax): Durability\n*   **Mouse** (PowerLink): Compatibility\n*   **Router** (PowerLink): Compatibility\n*   **Smartwatch** (TechNova): Battery life\n\nThese findings are derived from the path `Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback \u2192 ABOUT_ISSUE \u2192 Issue`.",
+      "answer": "Based on the graph data, the following products have reported quality issues:\n\n*   **Laptop** (TechNova): Defective product, Battery life\n*   **Desk Chair** (DeskPro): Packaging damage\n*   **Headphones** (SoundMax): Durability\n*   **Mouse** (PowerLink): Compatibility\n*   **Router** (PowerLink): Compatibility\n*   **Smartwatch** (TechNova): Battery life\n\nThese issues are linked via the path `Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback \u2192 ABOUT_ISSUE \u2192 Issue`.",
       "error": null,
       "notes": "Quality allowlist only: Laptop, Headphones, Mouse, Smartwatch, Router, Desk Chair. Tablet (late delivery) and Power Bank (wrong item) must NOT be counted"
     },
@@ -299,7 +304,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "Five products have negative feedback associated with returns:\n*   **Desk Chair** (DeskPro): Returned due to packaging damage.\n*   **Headphones** (SoundMax): Returned due to poor durability.\n*   **Laptop** (TechNova): Returned due to a defective display.\n*   **Power Bank** (PowerLink): Returned because the wrong item was received.\n*   **Smartwatch** (TechNova): Returned due to battery failure.\n\nThese findings are based on the graph path Product \u2192 CustomerFeedback \u2192 Issue, filtered for negative sentiment and return status.",
+      "answer": "Five products have negative feedback associated with returns:\n*   **Desk Chair** (DeskPro): Returned due to packaging damage.\n*   **Headphones** (SoundMax): Returned due to poor durability.\n*   **Laptop** (TechNova): Returned due to a defective display.\n*   **Power Bank** (PowerLink): Returned because the wrong item was received.\n*   **Smartwatch** (TechNova): Returned due to battery failure.\n\nThese findings are based on the graph path `Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback \u2192 ABOUT_ISSUE \u2192 Issue`, filtered for negative sentiment and return status.",
       "error": null,
       "notes": "Negative + returned: Laptop, Headphones, Smartwatch, Desk Chair, Power Bank"
     },
@@ -320,7 +325,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "Based on the graph data, four brands have received negative feedback:\n\n*   **TechNova**: 4 negative feedback instances (Laptop, Smartwatch, Tablet) citing issues like battery life and defective products.\n*   **PowerLink**: 3 negative feedback instances (Mouse, Power Bank, Router) citing compatibility and wrong item received.\n*   **SoundMax**: 1 negative feedback instance (Headphones) citing durability.\n*   **DeskPro**: 1 negative feedback instance (Desk Chair) citing packaging damage.\n\nThese relationships follow the path: Brand \u2192 HAS_PRODUCT \u2192 Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback.",
+      "answer": "Based on the graph data, four brands have received negative feedback:\n\n*   **TechNova**: 4 negative feedback instances (Laptop, Smartwatch, Tablet) citing issues like defective products, battery life, and late delivery.\n*   **PowerLink**: 3 negative feedback instances (Mouse, Power Bank, Router) citing compatibility and wrong item received.\n*   **SoundMax**: 1 negative feedback instance (Headphones) citing durability.\n*   **DeskPro**: 1 negative feedback instance (Desk Chair) citing packaging damage.\n\nThese relationships follow the path: Brand \u2192 HAS_PRODUCT \u2192 Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback.",
       "error": null,
       "notes": "TechNova, SoundMax, PowerLink, DeskPro. ViewClear only has neutral feedback"
     },
@@ -363,7 +368,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "Both the SQL and Graph agents successfully identified the same five products that have high sales (at or above the median of 14 units) and reported quality issues.\n\n*   **Mouse** (PowerLink): 70 units sold; issue: Compatibility.\n*   **Headphones** (SoundMax): 25 units sold; issue: Durability.\n*   **Router** (PowerLink): 25 units sold; issue: Compatibility.\n*   **Laptop** (TechNova): 18 units sold; issues: Defective product, Battery life.\n*   **Smartwatch** (TechNova): 18 units sold; issue: Battery life.\n\nThe SQL results confirmed the product names, while the graph data provided specific sales volumes, revenue, and the exact nature of the quality issues.",
+      "answer": "Both the SQL and Graph agents successfully identified the same five products that have high sales (at or above the median of 14 units) and reported quality issues. The graph data provides specific details on brands, sales volumes, and the exact nature of the issues:\n\n*   **Mouse** (PowerLink): 70 units sold; issue: Compatibility.\n*   **Headphones** (SoundMax): 25 units sold; issue: Durability.\n*   **Router** (PowerLink): 25 units sold; issue: Compatibility.\n*   **Laptop** (TechNova): 18 units sold; issues: Defective product, Battery life.\n*   **Smartwatch** (TechNova): 18 units sold; issue: Battery life.",
       "error": null,
       "notes": "High sales (>= median) AND quality issue: Mouse, Headphones, Router, Laptop, Smartwatch"
     },
@@ -384,7 +389,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "The Laptop (brand: TechNova) is linked to two quality issues: **Defective product** and **Battery life**. These issues are connected via the path Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback \u2192 ABOUT_ISSUE \u2192 Issue. There are 2 customer feedback entries associated with these issues.",
+      "answer": "Based on the graph data, the Laptop (Brand: TechNova) is linked to two specific quality issues:\n*   Defective product\n*   Battery life\n\nThese issues are connected via the path Product \u2192 HAS_FEEDBACK \u2192 CustomerFeedback \u2192 ABOUT_ISSUE \u2192 Issue, with a total of 2 feedback entries reporting these problems.",
       "error": null,
       "notes": "Laptop: Defective product, Battery life"
     },
@@ -430,7 +435,7 @@
       },
       "missing_keywords": [],
       "passed": true,
-      "answer": "Based on the SQL analytics, seven high-selling products (defined as those with sales volume at or above the median) also have negative feedback: **Headphones, Laptop, Mouse, Power Bank, Router, Smartwatch, and Tablet**.\n\nThe graph data provides specific details on the negative feedback for these products:\n*   **Laptop (TechNova):** Issues with defective display and short battery life.\n*   **Smartwatch (TechNova):** Battery failure.\n*   **Tablet (TechNova):** Late delivery.\n*   **Headphones (SoundMax):** Poor durability.\n*   **Mouse (PowerLink):** Compatibility issues.\n*   **Router (PowerLink):** Compatibility issues.\n*   **Power Bank (PowerLink):** Wrong item received.\n\nNote: The graph data also identified a \"Desk Chair\" with negative feedback, but it was not included in the SQL results, indicating it does not meet the \"high-selling\" threshold.",
+      "answer": "Based on the SQL analytics, seven high-selling products (defined as those with sales volume at or above the median) also have negative feedback: **Headphones, Laptop, Mouse, Power Bank, Router, Smartwatch, and Tablet**.\n\nThe graph data provides specific details on the issues driving this negative sentiment:\n*   **Headphones:** Poor durability (ear cushions tore).\n*   **Laptop:** Defective display and short battery life.\n*   **Mouse & Router:** Compatibility issues.\n*   **Power Bank:** Wrong item received.\n*   **Smartwatch:** Battery failure.\n*   **Tablet:** Late delivery.\n\nNote: The graph agent identified an additional product, **Desk Chair**, with negative feedback (packaging damage), but it was not included in the SQL list of high-selling products.",
       "error": null,
       "notes": "Median rule from SQL + negative feedback from graph: Mouse, Headphones, Router, Tablet, Laptop, Smartwatch, Power Bank"
     },
@@ -453,7 +458,7 @@
         "64186.66"
       ],
       "passed": false,
-      "answer": "**Total Revenue (SQL-derived):**\nThe SQL query returned revenue figures for six products with quality issues, but it did not provide a single aggregated \"total revenue\" for the entire company. The sum of the revenues for these six specific products is **$47,238.20** (35,999.64 + 3,599.82 + 3,749.75 + 2,099.30 + 1,749.75 + 539.94).\n\n**Products with Quality Issues (Combined SQL & Graph):**\nBoth sources identify products with quality issues, though the SQL query included an additional product (Desk Chair) not flagged in the graph's \"high-sales\" filter. The products with reported quality issues are:\n\n*   **Laptop** (TechNova): Issues with *Defective product* and *Battery life*.\n*   **Smartwatch** (TechNova): Issue with *Battery life*.\n*   **Headphones** (SoundMax): Issue with *Durability*.\n*   **Mouse** (PowerLink): Issue with *Compatibility*.\n*   **Router** (PowerLink): Issue with *Compatibility*.\n*   **Desk Chair**: Identified by SQL as having quality issues (specific issue type not detailed in the preview), with revenue of $539.94.\n\n*Note: The Graph Agent specifically filtered for \"high-sales\" products (median or above), which excluded the Desk Chair",
+      "answer": "**SQL-derived facts:**\n*   The total revenue for the six products with quality issues is **$47,838.20** (sum of the individual product revenues: 35,999.64 + 3,599.82 + 3,749.75 + 2,099.30 + 1,749.75 + 539.94).\n*   The products with quality issues are: Laptop, Smartwatch, Headphones, Mouse, Router, and Desk Chair.\n\n**Graph-derived facts:**\n*   The graph identifies five of these products as having \"high sales\" (at or above the median of 14 units): Laptop, Smartwatch, Headphones, Mouse, and Router.\n*   Specific quality issues linked to these high-sales products are:\n    *   **Laptop (TechNova):** Defective product, Battery life\n    *   **Smartwatch (TechNova):** Battery life\n    *   **Headphones (SoundMax):** Durability\n    *   **Mouse (PowerLink):** Compatibility\n    *   **Router (PowerLink):** Compatibility\n\n**Synthesis:**\nThe total revenue for all products with quality issues is **$47,838.20**. The graph analysis highlights that five of these products (Laptop, Smartwatch, Headphones, Mouse, and Router) are high-sales items with specific documented issues such as battery life, durability, and compatibility.",
       "error": null,
       "notes": "Needs a SQL metric and graph relationships in one answer"
     },
@@ -476,7 +481,7 @@
       },
       "missing_keywords": [],
       "passed": false,
-      "answer": "Based on the SQL analytics, five products with returns sold a combined total of 81 units. The specific breakdown by product and return reason is as follows:\n\n*   **Laptop**: 18 units sold; returned due to \"Defective display.\"\n*   **Headphones**: 25 units sold; returned due to \"Poor durability.\"\n*   **Smartwatch**: 18 units sold; returned due to \"Battery failure.\"\n*   **Desk Chair**: 6 units sold; returned due to \"Packaging damage.\"\n*   **Power Bank**: 14 units sold; returned due to \"Wrong item received.\"\n\nThe Neo4j graph agent failed to retrieve any relevant business-graph relationships for this query, so the answer relies solely on the structured SQL data.",
+      "answer": "Based on the SQL analytics, five products with returns sold a combined total of 81 units. The specific breakdown by product and return reason is as follows:\n\n*   **Laptop**: 18 units sold; returned due to \"Defective display.\"\n*   **Headphones**: 25 units sold; returned due to \"Poor durability.\"\n*   **Smartwatch**: 18 units sold; returned due to \"Battery failure.\"\n*   **Desk Chair**: 6 units sold; returned due to \"Packaging damage.\"\n*   **Power Bank**: 14 units sold; returned due to \"Wrong item received.\"\n\nThe Neo4j graph agent failed to retrieve relevant business-graph relationships, so this answer relies exclusively on the structured SQL data.",
       "error": "partial_sql_and_graph:graph:unsupported_or_empty_graph",
       "notes": "Returned products: Laptop, Headphones, Smartwatch, Desk Chair, Power Bank; reasons from customer_feedback.return_reason"
     },
@@ -608,6 +613,29 @@
       "answer": "This question looks like a general / non-database request. RetailAsk has not run SQL or business-graph retrieval for it. A dedicated General Agent is not wired yet \u2014 ask about sales metrics (SQL) or product\u2013feedback\u2013issue relationships (graph) for data-backed answers.",
       "error": null,
       "notes": "DDL request; must not run DROP"
+    },
+    {
+      "id": "fb-3",
+      "question": "How much ?",
+      "category": "user_feedback",
+      "source": "feedback",
+      "expected_routes": [
+        "sql"
+      ],
+      "actual_route": "general",
+      "route_reason": "The question is incomplete and lacks context to determine if it requires SQL metrics or graph relationships.",
+      "checks": {
+        "route": false,
+        "success": true,
+        "answer": false
+      },
+      "missing_keywords": [
+        "70"
+      ],
+      "passed": false,
+      "answer": "This question looks like a general / non-database request. RetailAsk has not run SQL or business-graph retrieval for it. A dedicated General Agent is not wired yet \u2014 ask about sales metrics (SQL) or product\u2013feedback\u2013issue relationships (graph) for data-backed answers.",
+      "error": null,
+      "notes": "It did not know the previous conversation"
     }
   ]
 }
